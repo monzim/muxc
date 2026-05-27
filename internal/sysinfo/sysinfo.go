@@ -78,9 +78,7 @@ func parseTmuxVersion(s string) ([]int, error) {
 
 	// Strip any trailing alphabetic suffix from the last component.
 	// "3.0a" → "3.0",  "3.6" → "3.6",  "10.0" → "10.0".
-	s = strings.TrimRightFunc(s, func(r rune) bool {
-		return unicode.IsLetter(r)
-	})
+	s = strings.TrimRightFunc(s, unicode.IsLetter)
 
 	if s == "" {
 		return nil, fmt.Errorf("empty version string")

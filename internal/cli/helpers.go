@@ -12,10 +12,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/monzim/muxc/internal/config"
 	"github.com/monzim/muxc/internal/state"
 	"github.com/monzim/muxc/internal/tmux"
-	"github.com/spf13/cobra"
 )
 
 // ErrNotFound is the sentinel returned by ResolveSessionName when neither the

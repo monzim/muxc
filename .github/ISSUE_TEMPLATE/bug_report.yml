@@ -1,0 +1,99 @@
+name: Bug report
+description: Something in muxc isn't working as documented.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. The fields below help
+        us reproduce the problem quickly. The `muxc doctor` output is usually
+        the single most useful piece of information — please include it.
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: muxc doctor output
+      description: Paste the full output of `muxc doctor` (or `bin/muxc doctor` if you built from source).
+      render: shell
+      placeholder: |
+        $ muxc doctor
+        ...
+    validations:
+      required: true
+
+  - type: input
+    id: muxc-version
+    attributes:
+      label: muxc version
+      description: Output of `muxc version`.
+      placeholder: "v1.0.0 (commit abc123, built 2026-05-28T12:00:00Z)"
+    validations:
+      required: true
+
+  - type: input
+    id: tmux-version
+    attributes:
+      label: tmux version
+      description: Output of `tmux -V`.
+      placeholder: "tmux 3.4"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS / arch
+      description: Output of `uname -a`.
+      placeholder: "Linux host 6.5.0-15-generic #15-Ubuntu SMP x86_64 GNU/Linux"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How did you install muxc?
+      options:
+        - Release binary (tar.gz)
+        - .deb / .rpm package
+        - Homebrew tap
+        - go install
+        - Built from source (make build)
+        - Other (describe in steps)
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal sequence of commands or actions that triggers the bug.
+      placeholder: |
+        1. `muxc new ~/code/foo`
+        2. `muxc kill foo --idle 1s`
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include error messages, stderr output, and exit codes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Anything else that might be relevant — config snippets, logs, screenshots.
+    validations:
+      required: false

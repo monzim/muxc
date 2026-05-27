@@ -1,0 +1,47 @@
+name: Feature request
+description: Suggest a new capability or improvement.
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, please skim `spec.md` §3 ("Out of Scope") and §23
+        ("Non-Goals That Implementers Will Be Tempted to Add"). A handful of
+        features (daemon mode, remote-host management, screen/zellij support,
+        `claude -p` orchestration, conversation editing) are explicitly out of
+        scope and will be closed.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What can't you do today? What pain are you working around?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should muxc do? Sketch the CLI surface, flag names, or output you'd expect.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you weighed, and why this one is better.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: scope-check
+    attributes:
+      label: Scope check
+      options:
+        - label: I have read `spec.md` §3 and §23 and confirmed this feature is not on the explicit non-goals list.
+          required: true
+        - label: I understand muxc is Linux-only in v1 (no macOS/Windows-specific features).
+          required: true

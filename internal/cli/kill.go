@@ -10,9 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/monzim/muxc/internal/state"
 	"github.com/monzim/muxc/internal/tmux"
-	"github.com/spf13/cobra"
 )
 
 // killCmd kills one or more muxc-managed tmux sessions.
@@ -121,13 +122,15 @@ func runKill(cmd *cobra.Command, args []string) error {
 
 	switch {
 	case hasName:
-		// Resolve: try bare name then prefixed.
-		resolved, rErr := ResolveSessionName(ctx, cfg, args[0])
+		// hasName == len(args) > 0 (set above), so args[0] is safe. gosec G602
+		// can't follow that across the switch, hence the nolint.
+		name := args[0] //nolint:gosec // G602: hasName guard ensures len(args) > 0
+		resolved, rErr := ResolveSessionName(ctx, cfg, name)
 		if rErr != nil {
 			if errors.Is(rErr, ErrNotFound) {
 				return &ExitError{
 					Code:    2,
-					Message: fmt.Sprintf("muxc: tmux session %q not found\n  list available sessions with `muxc ls`", args[0]),
+					Message: fmt.Sprintf("muxc: tmux session %q not found\n  list available sessions with `muxc ls`", name),
 				}
 			}
 			return rErr
@@ -178,17 +181,11 @@ func runKill(cmd *cobra.Command, args []string) error {
 	// ── Confirmation prompt ───────────────────────────────────────────────────
 	if cfg.Defaults.ConfirmKill && !yes && !dryRun {
 		// Build a SessionRow slice for the targets so we can use formatKillTargets.
-		// For name-mode the RSS might be 0; that's acceptable.
-		var confirmRows []SessionRow
-		if idleStr != "" {
-			// We already gathered rows; rebuild from targets (which carry RSS).
-			for _, t := range targets {
-				confirmRows = append(confirmRows, SessionRow{Name: t.name, RSSPlusChildrenBytes: t.rss})
-			}
-		} else {
-			for _, t := range targets {
-				confirmRows = append(confirmRows, SessionRow{Name: t.name, RSSPlusChildrenBytes: t.rss})
-			}
+		// For name-mode the RSS might be 0; that's acceptable. idle-mode populates
+		// t.rss from the Gather() rows above; name/all modes leave it as 0.
+		confirmRows := make([]SessionRow, 0, len(targets))
+		for _, t := range targets {
+			confirmRows = append(confirmRows, SessionRow{Name: t.name, RSSPlusChildrenBytes: t.rss})
 		}
 
 		prompt := fmt.Sprintf("Kill %d %s?\n%s",

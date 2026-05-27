@@ -12,10 +12,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/monzim/muxc/internal/config"
 	"github.com/monzim/muxc/internal/state"
 	"github.com/monzim/muxc/internal/tmux"
-	"github.com/spf13/cobra"
 )
 
 // newCmd creates a new tmux session and optionally launches Claude Code inside it.

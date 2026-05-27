@@ -1,5 +1,11 @@
 run:
   timeout: 5m
+  # Target the Go language version from go.mod's `go` directive, not the
+  # newer `toolchain` directive. Without this pin, golangci-lint (which is
+  # itself built with Go 1.24) refuses to load when it sees toolchain
+  # go1.26.3 in go.mod with: "the Go language version used to build
+  # golangci-lint is lower than the targeted Go version".
+  go: "1.24"
 
 linters:
   enable:
@@ -23,8 +29,10 @@ linters-settings:
       - name: exported
         severity: warning
   gocritic:
-    disabled-checks:
-      - hugeParam
+    # hugeParam is already disabled by default; listing it here triggers a
+    # noisy "no need to disable" warning. Re-add named checks here if any
+    # default gocritic check needs silencing.
+    disabled-checks: []
   gosec:
     excludes:
       - G204  # subprocess launched with variable — expected for tmux exec wrappers
@@ -35,5 +43,8 @@ issues:
       linters:
         - gosec
         - errcheck
+        # Test helpers (fakeAttacher, captureTable, etc.) may sit unused
+        # between test runs — keep them rather than churn the file.
+        - unused
   max-issues-per-linter: 0
   max-same-issues: 0

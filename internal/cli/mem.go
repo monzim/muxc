@@ -12,9 +12,10 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/spf13/cobra"
+
 	"github.com/monzim/muxc/internal/config"
 	"github.com/monzim/muxc/internal/render"
-	"github.com/spf13/cobra"
 )
 
 // memTotals is the JSON wrapper added in --json mode (spec §11.5).

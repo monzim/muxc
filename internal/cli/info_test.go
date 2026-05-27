@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -393,7 +394,7 @@ func TestTruncateComm(t *testing.T) {
 func TestBuildProcessTree_ZeroPanePID(t *testing.T) {
 	// When PanePID is 0, buildProcessTree should return nil without panicking.
 	row := &SessionRow{PanePID: 0}
-	nodes, total := buildProcessTree(nil, row)
+	nodes, total := buildProcessTree(context.Background(), row)
 	if nodes != nil {
 		t.Errorf("expected nil nodes when panePID=0, got %v", nodes)
 	}
@@ -406,7 +407,7 @@ func TestBuildProcessTree_RealProc(t *testing.T) {
 	// Use our own PID — it should always be alive.
 	ourPID := os.Getpid()
 	row := &SessionRow{PanePID: ourPID}
-	nodes, total := buildProcessTree(nil, row)
+	nodes, total := buildProcessTree(context.Background(), row)
 
 	// We expect at least 1 node (our own PID).
 	if total == 0 {
