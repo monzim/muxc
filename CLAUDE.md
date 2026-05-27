@@ -87,10 +87,20 @@ Before shipping, all 14 criteria in §24 must pass. The load-bearing ones to kee
 
 These features were added after v1.0.0 shipped and **deliberately deviate from the original spec**. Keep them — they exist by explicit user direction, not by accident. Do not remove them as "scope creep" per §23.
 
-- **External Claude sessions in `muxc ls`** — by default, tmux sessions whose names do *not* start with `cfg.Defaults.Prefix` but which contain a detected Claude process are now listed (marked `is_external=true` and rendered with a trailing `*` in the NAME column). Pure tmux sessions without Claude remain hidden unless `--all` is used. Implemented by the `ExternalMode` enum in `internal/cli/gather.go` (replaces the old `includeExternal bool`). `kill --all` and `kill --idle` still operate only on muxc-prefixed sessions, so external sessions are never killed by accident.
-- **Interactive REPL menu** — invoking `muxc` with no subcommand now drops into a numbered picker (see `internal/cli/interactive.go`). Pick a command, follow per-command prompts (project path for `new`, session picker for `attach`/`info`, mode picker for `kill`), then return to the menu. `q`/`quit`/`exit`/EOF leave the loop. This is a soft TUI — plain text, no ncurses, no ANSI cursor control. Spec §3 rejected a "TUI dashboard" because `watch -n 2 muxc ls` covered the original goal; this menu serves a different goal (command discovery) and stays within the no-daemon constraint.
-- **`IdentifyClaude` includes `rootPID`** — `internal/proc/claude.go:IdentifyClaude` now considers the pane PID itself as a candidate, not just its descendants. This handles tmux sessions launched directly into a command (e.g., `tmux new-session -d <claude-binary>`) where there's no wrapping shell. Spec §13.3 said "walk descendants" — that was an implementation hint, not a hard contract.
-- **`Tree.CWD`** — new helper in `internal/proc/tree.go` reads `/proc/<pid>/cwd` so `Gather` can derive `ProjectPath` for external sessions that aren't in `state.json`.
-- **Default `slog` handler to stderr at WARN level** — installed in `cmd/muxc/main.go:main` so warnings (e.g., corrupt `state.json`) surface by default per spec §17. The default `slog` handler is INFO-to-stderr, which would have been too noisy.
+- **External Claude sessions in `muxc ls`** — by default, tmux sessions whose names do *not* start with `cfg.Defaults.Prefix` but which contain a detected Claude process are now listed (marked `is_external=true` and rendered with a trailing `*` in the CLI table, `★` prefix in the TUI). Pure tmux sessions without Claude remain hidden unless `--all` is used. Implemented by the `ExternalMode` enum in `internal/session/gather.go`. `kill --all` and `kill --idle` still operate only on muxc-prefixed sessions, so external sessions are never killed by accident.
 
-The original spec at `spec.md` is unchanged; it remains the v1.0 contract.
+- **Bubble Tea + Lip Gloss TUI** — invoking `muxc` with no subcommand now launches a full terminal UI (see `internal/tui/`). The TUI offers a live sessions table with auto-refresh, cursor navigation (vim `j/k/h/l` and arrows), and dedicated screens for new/kill/info/doctor. Implementation uses `charmbracelet/bubbletea` v1.x, `charmbracelet/lipgloss` v1.x, and `charmbracelet/bubbles` v1.x. Spec §3 explicitly rejected a "TUI dashboard (ncurses)" — this deviation was authorised by the project owner and is the modern equivalent.
+
+- **Plain-text REPL fallback** — when stdin or stdout isn't a TTY (CI, piped input, dumb terminal), or when `MUXC_NO_TUI=1` is set, muxc falls back to the original `internal/cli/interactive.go` numbered REPL. This keeps every script, every integration test, and every piped-input workflow alive. The detection happens in `cli.shouldUseTUI`.
+
+- **`IdentifyClaude` includes `rootPID`** — `internal/proc/claude.go:IdentifyClaude` now considers the pane PID itself as a candidate, not just its descendants. This handles tmux sessions launched directly into a command (e.g., `tmux new-session -d <claude-binary>`) where there's no wrapping shell. Spec §13.3 said "walk descendants" — that was an implementation hint, not a hard contract.
+
+- **`Tree.CWD`** — new helper in `internal/proc/tree.go` reads `/proc/<pid>/cwd` so `Gather` can derive `ProjectPath` for external sessions that aren't in `state.json`.
+
+- **Default `slog` handler to stderr at WARN level** — installed in `cmd/muxc/main.go:main` so warnings (e.g., corrupt `state.json`) surface by default per spec §17.
+
+- **`internal/session/` and `internal/doctor/`** — extracted from `internal/cli/` to break the import cycle that arose when the TUI also needed live session data and doctor checks. `cli/gather.go` and `cli/doctor.go` retain thin type-alias re-exports so existing call sites compile unchanged. Future code should import the canonical packages (`session.Row`, `doctor.CheckResult`, etc.) directly.
+
+- **Binary size** — the TUI adds the Charm ecosystem to the binary; on linux/amd64 it grew from ~4.5 MB to **~5.6 MB stripped**. Still well under the spec §24 #1 target of < 10 MB.
+
+The original spec at `spec.md` is unchanged; it remains the v1.0 contract. These post-1.0 additions are the modern UX wrapper, not a replacement.

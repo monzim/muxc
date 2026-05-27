@@ -64,7 +64,7 @@ func (realSessionLister) ListSessions(ctx context.Context) ([]tmux.Session, erro
 
 // Package-level vars swappable by tests.
 var (
-	TmuxVersioner Versioner     = realVersioner{}
+	TmuxVersioner  Versioner     = realVersioner{}
 	SessionsLister SessionLister = realSessionLister{}
 )
 

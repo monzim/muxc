@@ -49,27 +49,33 @@ muxc kill my-project --yes          # tear it down
 
 ## Interactive mode
 
-Run `muxc` with no arguments to enter a numbered menu of available commands.
-Pick a command, follow the prompts, return to the menu, repeat. Type `q`,
-`quit`, `exit`, or press Ctrl-D to leave.
+Run `muxc` with no arguments to drop into the Bubble Tea TUI: a live
+sessions table with cursor navigation, an auto-refreshing display, and
+dedicated screens for `new`, `kill`, `info`, and `doctor`. The sessions
+screen is the default landing view.
 
-```
-$ muxc
-muxc 1.0.0 — interactive mode (type 'q' to quit)
+Keyboard:
 
-  1) ls       list sessions
-  2) new      create a session in a project directory
-  3) attach   attach to a session
-  4) kill     kill a session
-  5) mem      memory usage (sorted by RSS)
-  6) info     detailed session info
-  7) doctor   environment health check
-  8) version  print version
-Select (1-8, q): _
-```
+| Key | Action |
+|---|---|
+| `↑`/`↓` or `j`/`k` | Move cursor in the sessions table |
+| `enter` or `i` | Open the **info** screen for the selected session |
+| `a` | **Attach** to the selected session (one-way: detaching from tmux returns to your shell) |
+| `n` | Open the **new session** form |
+| `K` | Open the **kill** picker (capital K so it doesn't clash with `k` navigation) |
+| `s` | Cycle sort key (name → mem → idle → created → name) |
+| `r` | Force an immediate refresh |
+| `d` | Open the **doctor** screen |
+| `?` | Toggle help overlay |
+| `esc` | Back to the sessions screen from any sub-screen |
+| `q` or `Ctrl-C` | Quit |
 
-`attach` is a one-way trip — detaching from tmux drops you to the shell, not
-back to the muxc menu. Re-launch `muxc` to pick another command.
+The sessions table auto-refreshes every 2 seconds. External tmux sessions
+running Claude appear with a `★` prefix on their name.
+
+**Non-TTY fallback.** When stdin or stdout isn't a real terminal (CI, piped
+input, dumb terminal), `muxc` falls back to a plain-text numbered REPL so
+scripts and tests keep working. Force the fallback with `MUXC_NO_TUI=1`.
 
 ---
 
@@ -130,6 +136,7 @@ Other keys are ignored. The file is read once at `muxc new` time.
 | `MUXC_NO_COLOR` | Force color off (same as `display.color = "never"`) |
 | `CLAUDE_CONFIG_DIR` | Respected automatically for `paths.claude_projects` |
 | `MUXC_TMUX_SOCKET` | Target a private tmux socket via `tmux -L <name>` (primarily for tests and sandboxed setups) |
+| `MUXC_NO_TUI` | Force the plain-text REPL even on a real terminal (skip Bubble Tea) |
 
 ---
 

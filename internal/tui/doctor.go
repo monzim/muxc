@@ -19,10 +19,10 @@ type doctorModel struct {
 	st        *state.State
 	configDir string
 
-	checks    []doctor.CheckResult
-	cursor    int
-	expanded  bool
-	loading   bool
+	checks   []doctor.CheckResult
+	cursor   int
+	expanded bool
+	loading  bool
 
 	styles Styles
 	keys   KeyMap
