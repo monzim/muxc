@@ -25,16 +25,18 @@ func newLayout(s Styles, width int) layout {
 	return layout{styles: s, width: width}
 }
 
-// header renders the top bar:
+// header renders the top bar as a single line, full terminal width:
 //
-//	muxc · sessions (8)                                 sort=name · refreshed 2s ago
+//	muxc · sessions (8)                                 sort=name · ↻ 2s
+//
+// If the right side doesn't fit, it's dropped rather than wrapped — keeps
+// the header to exactly one row at all terminal widths.
 func (l layout) header(crumb, right string) string {
 	logo := l.styles.Logo.Render("muxc")
 	sep := l.styles.Faint.Render(" · ")
 	left := logo + sep + l.styles.HeaderCrumb.Render(crumb)
 
 	if l.width <= 0 {
-		// Width unknown — fall back to inline.
 		if right != "" {
 			return left + "  " + l.styles.HeaderRight.Render(right)
 		}
@@ -42,17 +44,30 @@ func (l layout) header(crumb, right string) string {
 	}
 
 	leftWidth := lipgloss.Width(left)
-	rightWidth := lipgloss.Width(right)
-	gap := l.width - leftWidth - rightWidth - 2 // -2 for left/right padding of 1 each
-	if gap < 1 {
-		gap = 1
+	// 2 = sum of left/right padding (1 each) on the Header style.
+	available := l.width - leftWidth - 2
+
+	rightRendered := l.styles.HeaderRight.Render(right)
+	rightWidth := lipgloss.Width(rightRendered)
+
+	// Drop the right side entirely if it would force a wrap; we'd rather
+	// hide the refresh indicator than break the header into two rows.
+	if rightWidth+1 > available {
+		rightRendered = ""
+		rightWidth = 0
 	}
 
-	// The header background spans the full row so we wrap in a Width-set
-	// style for a continuous tinted strip.
+	gap := available - rightWidth
+	if gap < 0 {
+		gap = 0
+	}
+
+	body := left + strings.Repeat(" ", gap) + rightRendered
+
 	return l.styles.Header.
 		Width(l.width).
-		Render(left + strings.Repeat(" ", gap) + l.styles.HeaderRight.Render(right))
+		MaxHeight(1).
+		Render(body)
 }
 
 // statusBar renders the bottom strip of context-sensitive shortcuts.

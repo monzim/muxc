@@ -102,15 +102,32 @@ func (m sessionsModel) View() string {
 
 	// ── Header ──
 	crumb := fmt.Sprintf("sessions (%d)", len(m.rows))
+	// Keep the right side single-line by using compact tokens. The Header bar
+	// has Width set so anything wider than the row wraps; "↻ 2 minutes ago"
+	// is too long, so we shorten to "↻ <compact dur>".
 	rightBits := []string{m.styles.Muted.Render("sort=") + m.styles.Strong.Render(sortKeys[m.sortIdx])}
 	if m.loading {
 		rightBits = append(rightBits, m.styles.HeaderRefresh.Render("◌ refreshing"))
 	} else if !m.lastRefresh.IsZero() {
-		rightBits = append(rightBits, m.styles.Muted.Render("↻ "+render.RelTime(m.lastRefresh)))
+		age := time.Since(m.lastRefresh)
+		rightBits = append(rightBits, m.styles.Muted.Render("↻ "+render.Duration(age)))
 	}
 	header := l.header(crumb, strings.Join(rightBits, "  "))
 
 	// ── Body card ──
+	// Compute the card's inner width (the area available to the table).
+	// Card has 2-char border and 2-char inner padding, leaving width-4 for
+	// content. Selected rows pad to this width so the highlight stretches
+	// the full row.
+	cardWidth := m.width - 2
+	if cardWidth < 40 {
+		cardWidth = 40
+	}
+	innerWidth := cardWidth - 4
+	if innerWidth < 30 {
+		innerWidth = 30
+	}
+
 	var body string
 	if m.err != nil {
 		body = m.styles.StatusBad.Render("⚠ error: ") + m.err.Error()
@@ -122,13 +139,9 @@ func (m sessionsModel) View() string {
 			m.styles.Strong.Render("claude") +
 			m.styles.Faint.Render(" — it will appear here automatically")
 	} else {
-		body = m.renderTable()
+		body = m.renderTable(innerWidth)
 	}
 
-	cardWidth := m.width - 2
-	if cardWidth < 40 {
-		cardWidth = 40
-	}
 	card := m.styles.Card.Width(cardWidth).Render(body)
 
 	// ── Status bar ──
@@ -148,8 +161,10 @@ func (m sessionsModel) View() string {
 	return l.compose(header, card, status)
 }
 
-// renderTable lays out the sessions table inside the body card.
-func (m sessionsModel) renderTable() string {
+// renderTable lays out the sessions table inside the body card. innerWidth
+// is the available width inside the card (after borders + padding) — used
+// to stretch the selection bar across the entire row.
+func (m sessionsModel) renderTable(innerWidth int) string {
 	headers := []string{"NAME", "PROJECT", "CLAUDE", "UPTIME", "IDLE", "MEM", "ATTACHED"}
 	rights := map[int]bool{5: true} // MEM right-aligned
 
@@ -222,14 +237,22 @@ func (m sessionsModel) renderTable() string {
 	b.WriteString("\n")
 
 	// ── Body rows ──
+	// Each row gets padded to innerWidth so the selection highlight stretches
+	// across the entire visible band, not just the cells.
 	for i, row := range rows {
 		cells := make([]string, len(row.cells))
 		for j, c := range row.cells {
 			cells[j] = padCol(c, colWidths[j], rights[j])
 		}
 		line := strings.Join(cells, "  ")
+
+		// Pad to full row width so the background fills.
+		visual := lipgloss.Width(line)
+		if pad := innerWidth - visual; pad > 0 {
+			line += strings.Repeat(" ", pad)
+		}
+
 		if i == m.cursor {
-			// Render selection as a bold accent stripe.
 			line = m.styles.TableRowSel.Render(line)
 		}
 		b.WriteString(line)

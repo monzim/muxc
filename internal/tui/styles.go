@@ -2,34 +2,44 @@ package tui
 
 import "github.com/charmbracelet/lipgloss"
 
-// Palette — adaptive so the same set looks right on both light and dark
-// terminal backgrounds. Inspired by gh dash, lazygit, k9s.
+// Palette — Claude-inspired warm tones, adaptive across light and dark.
+// Anchored on Claude's signature terracotta/orange. The palette is intentional
+// about contrast: primary is bold enough to ride on top of dark backgrounds
+// without straining readability, and the selection background is a warm
+// inverse of the primary so the row reads as "lit up" rather than greyed out.
 var (
-	// Primary accent for selections, focus, active borders.
-	colorPrimary = lipgloss.AdaptiveColor{Light: "#5B6CFF", Dark: "#7C8CFF"}
-	// Secondary accent for headings and badges.
-	colorSecondary = lipgloss.AdaptiveColor{Light: "#A855F7", Dark: "#C084FC"}
-	// Subtle background tint for selected rows / cards.
-	colorSelBG = lipgloss.AdaptiveColor{Light: "#E0E7FF", Dark: "#1E2240"}
+	// Primary — Claude's signature warm orange ("clay").
+	colorPrimary = lipgloss.AdaptiveColor{Light: "#CC785C", Dark: "#E89A85"}
+	// PrimarySoft — a lighter shade used for less assertive accents.
+	colorPrimarySoft = lipgloss.AdaptiveColor{Light: "#D49581", Dark: "#F0B8A0"}
+	// Secondary — amber, used for headings and section labels.
+	colorSecondary = lipgloss.AdaptiveColor{Light: "#B45309", Dark: "#FDBA74"}
+	// Selection background — warm tinted band that runs the full row width.
+	colorSelBG = lipgloss.AdaptiveColor{Light: "#FCEDE4", Dark: "#3A241B"}
+	// Selection foreground — high-contrast warm cream on dark, deep brown on light.
+	colorSelFG = lipgloss.AdaptiveColor{Light: "#7C2D12", Dark: "#FFE4D3"}
 
 	// Foregrounds.
-	colorFG      = lipgloss.AdaptiveColor{Light: "#0F172A", Dark: "#E2E8F0"}
-	colorMuted   = lipgloss.AdaptiveColor{Light: "#64748B", Dark: "#94A3B8"}
-	colorFaint   = lipgloss.AdaptiveColor{Light: "#94A3B8", Dark: "#64748B"}
-	colorInverse = lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#0F172A"}
+	colorFG      = lipgloss.AdaptiveColor{Light: "#1C1917", Dark: "#F5F1E8"}
+	colorMuted   = lipgloss.AdaptiveColor{Light: "#78716C", Dark: "#A8A29E"}
+	colorFaint   = lipgloss.AdaptiveColor{Light: "#A8A29E", Dark: "#78716C"}
+	colorInverse = lipgloss.AdaptiveColor{Light: "#FFFBF5", Dark: "#1C1917"}
 
-	// Status colours.
-	colorOK   = lipgloss.AdaptiveColor{Light: "#059669", Dark: "#10B981"}
-	colorWarn = lipgloss.AdaptiveColor{Light: "#D97706", Dark: "#F59E0B"}
-	colorBad  = lipgloss.AdaptiveColor{Light: "#DC2626", Dark: "#F87171"}
-	colorExt  = lipgloss.AdaptiveColor{Light: "#EA580C", Dark: "#FB923C"}
+	// Status colours — kept tonally consistent with the warm palette but
+	// distinct enough to read as semantic signals.
+	colorOK   = lipgloss.AdaptiveColor{Light: "#15803D", Dark: "#86EFAC"}
+	colorWarn = lipgloss.AdaptiveColor{Light: "#A16207", Dark: "#FCD34D"}
+	colorBad  = lipgloss.AdaptiveColor{Light: "#B91C1C", Dark: "#FCA5A5"}
+	// External marker — slightly more saturated than primary so it stands out
+	// without competing with the selection band.
+	colorExt = lipgloss.AdaptiveColor{Light: "#9A3412", Dark: "#FB923C"}
 
-	// Structural lines.
-	colorBorder      = lipgloss.AdaptiveColor{Light: "#CBD5E1", Dark: "#334155"}
+	// Structural lines — warm beige border so it harmonises with the palette.
+	colorBorder      = lipgloss.AdaptiveColor{Light: "#E7DDD0", Dark: "#44403C"}
 	colorBorderFocus = colorPrimary
 
-	// Header background.
-	colorHeaderBG = lipgloss.AdaptiveColor{Light: "#F1F5F9", Dark: "#0B1224"}
+	// Header background — paper-ish on light, charcoal on dark.
+	colorHeaderBG = lipgloss.AdaptiveColor{Light: "#F8F3EC", Dark: "#1A1612"}
 )
 
 // Styles bundles every Lip Gloss style the TUI uses so theming lives in one
@@ -105,8 +115,7 @@ func DefaultStyles() Styles {
 		HeaderCrumb: lipgloss.NewStyle().
 			Foreground(colorMuted),
 		HeaderRight: lipgloss.NewStyle().
-			Foreground(colorMuted).
-			Padding(0, 1),
+			Foreground(colorMuted),
 		HeaderRefresh: lipgloss.NewStyle().
 			Foreground(colorSecondary).
 			Bold(true),
@@ -131,15 +140,15 @@ func DefaultStyles() Styles {
 
 		TableHeader: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(colorSecondary).
-			Padding(0, 0),
+			Foreground(colorSecondary),
 		TableRow: lipgloss.NewStyle().
-			Padding(0, 0).
 			Foreground(colorFG),
+		// TableRowSel: full-row tinted band. Width is applied at render time
+		// in sessions.go so the highlight stretches the entire card width
+		// rather than only the text it contains.
 		TableRowSel: lipgloss.NewStyle().
-			Padding(0, 0).
 			Bold(true).
-			Foreground(colorPrimary).
+			Foreground(colorSelFG).
 			Background(colorSelBG),
 
 		BadgeExternal: lipgloss.NewStyle().
@@ -200,3 +209,7 @@ func DefaultStyles() Styles {
 			Foreground(colorPrimary),
 	}
 }
+
+// keep colorPrimarySoft / colorInverse exported via package so they can be
+// referenced by future screens without needing to import them.
+var _ = colorPrimarySoft
