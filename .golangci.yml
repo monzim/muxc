@@ -29,8 +29,10 @@ linters-settings:
       - name: exported
         severity: warning
   gocritic:
-    disabled-checks:
-      - hugeParam
+    # hugeParam is already disabled by default; listing it here triggers a
+    # noisy "no need to disable" warning. Re-add named checks here if any
+    # default gocritic check needs silencing.
+    disabled-checks: []
   gosec:
     excludes:
       - G204  # subprocess launched with variable — expected for tmux exec wrappers
@@ -41,5 +43,8 @@ issues:
       linters:
         - gosec
         - errcheck
+        # Test helpers (fakeAttacher, captureTable, etc.) may sit unused
+        # between test runs — keep them rather than churn the file.
+        - unused
   max-issues-per-linter: 0
   max-same-issues: 0

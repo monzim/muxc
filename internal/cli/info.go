@@ -13,10 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/monzim/muxc/internal/claude"
 	"github.com/monzim/muxc/internal/proc"
 	"github.com/monzim/muxc/internal/render"
-	"github.com/spf13/cobra"
 )
 
 // infoCmd shows detailed information about a single session.
@@ -230,7 +231,9 @@ func renderInfoText(
 	if transcript != nil {
 		transcriptDisplay := homeRelative(transcript.Path, home)
 		fmt.Fprintf(w, "  transcript: %s\n", transcriptDisplay)
-		sizeStr := render.Bytes(uint64(transcript.Size))
+		// transcript.Size comes from os.FileInfo.Size() for a regular file —
+		// always non-negative — so the int64→uint64 conversion is safe.
+		sizeStr := render.Bytes(uint64(transcript.Size)) //nolint:gosec // G115: bounded by os.FileInfo contract
 		mTimeAgo := render.Duration(time.Since(transcript.ModTime))
 		fmt.Fprintf(w, "  size:      %s, modified %s ago\n", sizeStr, mTimeAgo)
 	} else {

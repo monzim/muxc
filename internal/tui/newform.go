@@ -287,11 +287,9 @@ func sanitizeNameTUI(s string) string {
 		if ok {
 			b.WriteRune(r)
 			prevDash = r == '-'
-		} else {
-			if !prevDash {
-				b.WriteRune('-')
-				prevDash = true
-			}
+		} else if !prevDash {
+			b.WriteRune('-')
+			prevDash = true
 		}
 	}
 	return strings.Trim(b.String(), "-")

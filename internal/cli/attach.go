@@ -19,9 +19,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/monzim/muxc/internal/render"
 	"github.com/monzim/muxc/internal/tmux"
-	"github.com/spf13/cobra"
 )
 
 // tmuxAttacher is the interface wrapping tmux.Attach so tests can substitute a

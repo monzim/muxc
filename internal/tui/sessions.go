@@ -118,16 +118,17 @@ func (m sessionsModel) View() string {
 	inner := cardInnerWidth(m.width)
 
 	var body string
-	if m.err != nil {
+	switch {
+	case m.err != nil:
 		body = m.styles.StatusBad.Render("⚠ error: ") + m.err.Error()
-	} else if len(m.rows) == 0 {
+	case len(m.rows) == 0:
 		body = m.styles.Muted.Render("no sessions yet")
 		body += "\n\n"
 		body += m.styles.Faint.Render("press ") + m.styles.Accent.Render("n") +
 			m.styles.Faint.Render(" to create one, or run a tmux session running ") +
 			m.styles.Strong.Render("claude") +
 			m.styles.Faint.Render(" — it will appear here automatically")
-	} else {
+	default:
 		body = m.renderTable(inner)
 	}
 
@@ -171,8 +172,9 @@ func (m sessionsModel) renderTable(innerWidth int) string {
 	rows := make([]styledRow, len(m.rows))
 
 	for i, r := range m.rows {
-		// NAME: star prefix for external, name in primary color when selected.
-		nameCell := r.Name
+		// NAME: star prefix for external, two-space indent otherwise so the
+		// selection bar's left edge is column-aligned regardless of marker.
+		var nameCell string
 		if r.IsExternal {
 			nameCell = m.styles.BadgeExternal.Render("★ ") + r.Name
 		} else {

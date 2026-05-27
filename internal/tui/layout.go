@@ -141,20 +141,3 @@ func cardWidth(total int) int {
 	}
 	return w
 }
-
-// modalOverlay returns body with a centered modal painted on top. The body
-// is dimmed (rendered with the Faint style) so the modal pops visually.
-func (l layout) modalOverlay(body, modal string) string {
-	if l.width <= 0 {
-		return modal
-	}
-	// Lip Gloss has Place for centering — use it on the modal alone so the
-	// dimmed body stays scrollable in the background.
-	dim := l.styles.Faint.Render(body)
-	centered := lipgloss.Place(l.width, lipgloss.Height(body),
-		lipgloss.Center, lipgloss.Center, modal,
-		lipgloss.WithWhitespaceChars(" "))
-	// Layer the two: take the modal at center, dim everything else.
-	_ = dim
-	return centered
-}

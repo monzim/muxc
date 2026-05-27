@@ -8,9 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/monzim/muxc/internal/config"
 	"github.com/monzim/muxc/internal/render"
-	"github.com/spf13/cobra"
 )
 
 // lsCmd lists all muxc-managed tmux sessions with memory and idle stats.
