@@ -91,6 +91,7 @@ func (m doctorModel) View() string {
 		right = m.styles.HeaderRefresh.Render("◌ running")
 	}
 	header := l.header("doctor", right)
+	inner := cardInnerWidth(m.width)
 
 	var b strings.Builder
 	if len(m.checks) == 0 && m.loading {
@@ -106,14 +107,18 @@ func (m doctorModel) View() string {
 		for i, c := range m.checks {
 			badge := m.styledBadge(c.Status)
 			name := c.Name + strings.Repeat(" ", nameW-len(c.Name))
-			line := badge + "  " + name
+			marker := "  "
+			if i == m.cursor {
+				marker = "▸ "
+			}
+			line := marker + badge + "  " + name
 			if c.Message != "" && c.Status == doctor.StatusOK {
 				line += "  " + m.styles.Faint.Render(c.Message)
 			}
+			// Pad to inner width so the selection band fills the row.
+			line = padRow(line, inner)
 			if i == m.cursor {
-				line = m.styles.TableRowSel.Render("▸ " + line)
-			} else {
-				line = "  " + line
+				line = m.styles.TableRowSel.Render(line)
 			}
 			b.WriteString(line + "\n")
 
@@ -127,11 +132,7 @@ func (m doctorModel) View() string {
 		}
 	}
 
-	cardWidth := m.width - 2
-	if cardWidth < 40 {
-		cardWidth = 40
-	}
-	card := m.styles.Card.Width(cardWidth).Render(b.String())
+	card := m.styles.Card.Width(cardWidth(m.width)).Render(b.String())
 
 	status := []statusSeg{
 		{"↑↓/jk", "select"},

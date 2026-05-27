@@ -196,11 +196,7 @@ func (m newFormModel) View() string {
 		b.WriteString("\n" + m.styles.Faint.Render("returning to sessions…"))
 	}
 
-	cardWidth := m.width - 2
-	if cardWidth < 40 {
-		cardWidth = 40
-	}
-	card := m.styles.CardFocused.Width(cardWidth).Render(b.String())
+	card := m.styles.CardFocused.Width(cardWidth(m.width)).Render(b.String())
 
 	status := []statusSeg{
 		{"tab/↑↓", "field"},

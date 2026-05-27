@@ -115,18 +115,7 @@ func (m sessionsModel) View() string {
 	header := l.header(crumb, strings.Join(rightBits, "  "))
 
 	// ── Body card ──
-	// Compute the card's inner width (the area available to the table).
-	// Card has 2-char border and 2-char inner padding, leaving width-4 for
-	// content. Selected rows pad to this width so the highlight stretches
-	// the full row.
-	cardWidth := m.width - 2
-	if cardWidth < 40 {
-		cardWidth = 40
-	}
-	innerWidth := cardWidth - 4
-	if innerWidth < 30 {
-		innerWidth = 30
-	}
+	inner := cardInnerWidth(m.width)
 
 	var body string
 	if m.err != nil {
@@ -139,10 +128,10 @@ func (m sessionsModel) View() string {
 			m.styles.Strong.Render("claude") +
 			m.styles.Faint.Render(" — it will appear here automatically")
 	} else {
-		body = m.renderTable(innerWidth)
+		body = m.renderTable(inner)
 	}
 
-	card := m.styles.Card.Width(cardWidth).Render(body)
+	card := m.styles.Card.Width(cardWidth(m.width)).Render(body)
 
 	// ── Status bar ──
 	status := []statusSeg{
@@ -244,14 +233,7 @@ func (m sessionsModel) renderTable(innerWidth int) string {
 		for j, c := range row.cells {
 			cells[j] = padCol(c, colWidths[j], rights[j])
 		}
-		line := strings.Join(cells, "  ")
-
-		// Pad to full row width so the background fills.
-		visual := lipgloss.Width(line)
-		if pad := innerWidth - visual; pad > 0 {
-			line += strings.Repeat(" ", pad)
-		}
-
+		line := padRow(strings.Join(cells, "  "), innerWidth)
 		if i == m.cursor {
 			line = m.styles.TableRowSel.Render(line)
 		}

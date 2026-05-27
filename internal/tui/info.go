@@ -241,12 +241,7 @@ func (m infoModel) View() string {
 	l := newLayout(m.styles, m.width)
 
 	header := l.header("info · "+m.row.Name, "")
-
-	cardWidth := m.width - 2
-	if cardWidth < 40 {
-		cardWidth = 40
-	}
-	card := m.styles.Card.Width(cardWidth).Render(m.viewport.View())
+	card := m.styles.Card.Width(cardWidth(m.width)).Render(m.viewport.View())
 
 	status := []statusSeg{
 		{"↑↓/jk", "scroll"},

@@ -109,6 +109,39 @@ type statusSeg struct {
 	label string
 }
 
+// padRow pads a pre-rendered line with trailing spaces so its visual width
+// matches `width`. Returns line unchanged if it's already at or beyond width.
+// Used by every screen that renders selectable rows so the selection
+// background fills the entire band, not just the text it contains.
+func padRow(line string, width int) string {
+	have := lipgloss.Width(line)
+	if have >= width {
+		return line
+	}
+	return line + strings.Repeat(" ", width-have)
+}
+
+// cardInnerWidth returns the width available inside a Card style for a
+// terminal of width `total`. Accounts for the rounded border (2 cols) plus
+// the Card's horizontal padding (2 cols).
+func cardInnerWidth(total int) int {
+	w := total - 6 // -2 outer margin (compose), -2 border, -2 padding
+	if w < 30 {
+		w = 30
+	}
+	return w
+}
+
+// cardWidth returns the outer width of the body card given a total terminal
+// width — used as the .Width() argument when rendering the Card.
+func cardWidth(total int) int {
+	w := total - 2
+	if w < 40 {
+		w = 40
+	}
+	return w
+}
+
 // modalOverlay returns body with a centered modal painted on top. The body
 // is dimmed (rendered with the Faint style) so the modal pops visually.
 func (l layout) modalOverlay(body, modal string) string {

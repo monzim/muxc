@@ -286,6 +286,7 @@ func (m killpickerModel) executeStaleKill() tea.Cmd {
 func (m killpickerModel) View() string {
 	l := newLayout(m.styles, m.width)
 	header := l.header("kill", "")
+	inner := cardInnerWidth(m.width)
 
 	var b strings.Builder
 	var statusSegs []statusSeg
@@ -303,6 +304,8 @@ func (m killpickerModel) View() string {
 				label = fmt.Sprintf("--idle %s_", m.idleStr)
 			}
 			line := marker + m.styles.Strong.Render(label) + "  " + m.styles.Faint.Render(mode.help)
+			// Pad to card inner width so the selection band fills the row.
+			line = padRow(line, inner)
 			if i == m.modeIdx {
 				line = m.styles.TableRowSel.Render(line)
 			}
@@ -340,12 +343,7 @@ func (m killpickerModel) View() string {
 		b.WriteString("\n" + m.styles.StatusBad.Render("⚠ "+m.err.Error()))
 	}
 
-	cardWidth := m.width - 2
-	if cardWidth < 40 {
-		cardWidth = 40
-	}
-	card := m.styles.CardFocused.Width(cardWidth).Render(b.String())
-
+	card := m.styles.CardFocused.Width(cardWidth(m.width)).Render(b.String())
 	return l.compose(header, card, statusSegs)
 }
 
