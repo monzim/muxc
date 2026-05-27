@@ -15,13 +15,17 @@ package cli
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
+
+	"github.com/monzim/muxc/internal/tui"
 )
 
 // menuItem describes one entry in the REPL menu.
@@ -59,7 +63,56 @@ func defaultMenuItems() []menuItem {
 
 // runInteractive is the RunE for rootCmd when no subcommand was provided.
 // Hooked up by init() in root.go.
+//
+// Routing:
+//  1. If stdin and stdout are real terminals (and TERM != dumb), launch the
+//     Bubble Tea TUI via tui.Run.
+//  2. Otherwise (piped input, CI, dumb terminal), or if tui.Run returns
+//     tui.ErrNoTTY, fall back to the plain-text REPL (runPlainREPL).
+//
+// The plain REPL stays exported-via-package so integration tests that pipe
+// input to `muxc` keep working unchanged.
 func runInteractive(cmd *cobra.Command, _ []string) error {
+	if shouldUseTUI(cmd) {
+		cfg, st, err := LoadContext(cmd)
+		if err != nil {
+			return err
+		}
+		err = tui.Run(cfg, st)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, tui.ErrNoTTY) {
+			return err
+		}
+		// Fall through to plain REPL on ErrNoTTY (defensive — should not
+		// usually happen since we already checked shouldUseTUI).
+	}
+	return runPlainREPL(cmd)
+}
+
+// shouldUseTUI returns true when the TUI is appropriate for the current
+// invocation: both stdin and stdout must be terminals, and TERM must not be
+// "dumb". A MUXC_NO_TUI env var lets users force the plain REPL.
+func shouldUseTUI(cmd *cobra.Command) bool {
+	if os.Getenv("MUXC_NO_TUI") != "" {
+		return false
+	}
+	if os.Getenv("TERM") == "dumb" {
+		return false
+	}
+	in, okIn := cmd.InOrStdin().(*os.File)
+	out, okOut := cmd.OutOrStdout().(*os.File)
+	if !okIn || !okOut {
+		return false
+	}
+	return isatty.IsTerminal(in.Fd()) && isatty.IsTerminal(out.Fd())
+}
+
+// runPlainREPL is the original numbered-menu REPL used as a fallback when no
+// interactive terminal is available. Kept intact for piped-input tests and
+// scripted use.
+func runPlainREPL(cmd *cobra.Command) error {
 	env := &replEnv{
 		cmd:    cmd,
 		reader: bufio.NewReader(cmd.InOrStdin()),

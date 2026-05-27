@@ -8,10 +8,17 @@
 package tui
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"os"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattn/go-isatty"
 
 	"github.com/monzim/muxc/internal/config"
 	"github.com/monzim/muxc/internal/state"
+	"github.com/monzim/muxc/internal/tmux"
 )
 
 // ErrNoTTY indicates muxc was invoked in a non-interactive context. The CLI
@@ -22,10 +29,36 @@ var ErrNoTTY = errors.New("tui: no interactive terminal detected")
 // ErrNoTTY when stdin or stdout is not a terminal so the caller can choose a
 // fallback. Any other non-nil error indicates a real failure to render.
 //
-// On a successful attach picked from the TUI, Run returns nil AFTER the
-// terminal has been restored and tmux has taken over via syscall.Exec — so in
-// practice control never returns from such a Run() call.
+// If the user selects "attach" inside the TUI, Run returns nil AFTER calling
+// tmux.Attach (which uses syscall.Exec). In that path control never returns —
+// the muxc process is replaced by tmux.
 func Run(cfg *config.Config, st *state.State) error {
-	// Wave 1: skeleton only. Real implementation arrives in Wave 2+.
-	return errors.New("tui: not implemented")
+	// Defensive TTY check — the cli layer should have screened already, but
+	// we don't want to corrupt a non-terminal stream if it didn't.
+	if !isatty.IsTerminal(os.Stdin.Fd()) || !isatty.IsTerminal(os.Stdout.Fd()) {
+		return ErrNoTTY
+	}
+
+	app := NewApp(cfg, st)
+
+	prog := tea.NewProgram(
+		app,
+		tea.WithAltScreen(),
+		tea.WithContext(context.Background()),
+	)
+
+	finalModel, err := prog.Run()
+	if err != nil {
+		return fmt.Errorf("tui: program: %w", err)
+	}
+
+	// Post-quit handoff: if the user picked attach, the App stored the target
+	// session name. tmux.Attach uses syscall.Exec — terminal is already
+	// restored by Bubble Tea on Quit.
+	if final, ok := finalModel.(App); ok {
+		if target := final.AttachTarget(); target != "" {
+			return tmux.Attach(target, true)
+		}
+	}
+	return nil
 }
