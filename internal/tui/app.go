@@ -1,7 +1,8 @@
 package tui
 
 import (
-	"github.com/charmbracelet/bubbles/help"
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -9,9 +10,8 @@ import (
 	"github.com/monzim/muxc/internal/state"
 )
 
-// App is the root tea.Model. It owns shared state (config, terminal size,
-// attach handoff target) and dispatches messages to the currently-focused
-// screen's model.
+// App is the root tea.Model. Owns shared state (config, terminal size,
+// attach handoff target) and dispatches messages to the active screen.
 type App struct {
 	screen       screenID
 	cfg          *config.Config
@@ -20,10 +20,9 @@ type App struct {
 	height       int
 	styles       Styles
 	keys         KeyMap
-	help         help.Model
 	showHelp     bool
-	attachTarget string // non-empty if user picked attach; tui.Run reads after program.Run()
-	bannerErr    error  // non-nil → top-of-screen banner (cleared on next key)
+	attachTarget string // non-empty if user picked attach; tui.Run reads after Quit
+	bannerErr    error  // banner shown above the active screen, cleared on next key
 
 	// Per-screen models.
 	sessions   sessionsModel
@@ -37,8 +36,6 @@ type App struct {
 func NewApp(cfg *config.Config, st *state.State) App {
 	styles := DefaultStyles()
 	keys := DefaultKeyMap()
-	// Best-effort config dir derivation for the doctor screen — empty string
-	// means doctor will use the default ~/.config/muxc/ path.
 	configDir := ""
 	return App{
 		screen:     screenSessions,
@@ -46,7 +43,6 @@ func NewApp(cfg *config.Config, st *state.State) App {
 		st:         st,
 		styles:     styles,
 		keys:       keys,
-		help:       newHelp(),
 		sessions:   newSessionsModel(cfg, st, styles, keys),
 		newForm:    newNewFormModel(cfg, st, styles, keys),
 		killPicker: newKillpickerModel(cfg, st, styles, keys),
@@ -56,39 +52,30 @@ func NewApp(cfg *config.Config, st *state.State) App {
 }
 
 // AttachTarget returns the session name the user picked for attach (or "" if
-// they exited some other way). Read after program.Run() so tui.Run can do the
-// post-Quit syscall.Exec into tmux.
+// they exited some other way). Read after program.Run().
 func (a App) AttachTarget() string { return a.attachTarget }
 
-// Init dispatches to the active screen's Init.
 func (a App) Init() tea.Cmd {
 	return a.sessions.Init()
 }
 
-// Update handles global keys, resize, and cross-screen messages, then forwards
-// to the active screen's Update.
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// --- Cross-screen messages (handled regardless of screen) ---
+	// Cross-screen messages, handled regardless of which screen is active.
 	switch msg := msg.(type) {
 
 	case attachRequestMsg:
-		// Sessions screen requested attach. Set target, quit; tui.Run will
-		// syscall.Exec into tmux post-Run.
 		a.attachTarget = msg.name
 		return a, tea.Quit
 
 	case sessionCreatedMsg:
-		// NewForm succeeded. Switch back to sessions and force a refresh.
 		a.screen = screenSessions
 		return a, gatherCmd(a.cfg, a.st)
 
 	case killCompleteMsg:
-		// KillPicker finished. Switch back to sessions and force a refresh.
 		a.screen = screenSessions
 		return a, gatherCmd(a.cfg, a.st)
 
 	case killVictimsReadyMsg:
-		// Gather command for kill mode finished — hand off to the picker.
 		a.killPicker = a.killPicker.SetVictims(msg.rows)
 		return a, nil
 
@@ -99,23 +86,33 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
-		a.help.Width = msg.Width
-		a.sessions.width = msg.Width
-		a.sessions.height = msg.Height
-		return a, nil
+		// Fan window-size out to every screen — Bubble Tea otherwise only
+		// delivers it to the active model, which means re-entering a
+		// previously-unseen screen has stale dimensions.
+		a.sessions.width, a.sessions.height = msg.Width, msg.Height
+		a.newForm.width, a.newForm.height = msg.Width, msg.Height
+		a.killPicker.width, a.killPicker.height = msg.Width, msg.Height
+		a.doctor.width, a.doctor.height = msg.Width, msg.Height
+		// Forward to info so its viewport resizes too.
+		var infoCmd tea.Cmd
+		a.info, infoCmd = a.info.Update(msg)
+		return a, infoCmd
 
 	case tea.KeyMsg:
-		// Global keys — handled before screen-specific dispatch.
+		// Help modal closes on any key.
+		if a.showHelp {
+			a.showHelp = false
+			return a, nil
+		}
+
+		// Global keys.
 		switch {
 		case keyHit(msg, a.keys.Quit):
 			return a, tea.Quit
 		case keyHit(msg, a.keys.Help):
-			a.showHelp = !a.showHelp
-			a.help.ShowAll = a.showHelp
-			a.sessions.help.ShowAll = a.showHelp
+			a.showHelp = true
 			return a, nil
 		case keyHit(msg, a.keys.Back):
-			// Esc on any sub-screen → back to sessions.
 			if a.screen != screenSessions {
 				a.screen = screenSessions
 				return a, nil
@@ -154,11 +151,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Any non-handled key clears the banner so it doesn't linger.
+		// Info screen 'a' = attach to the viewed session.
+		if a.screen == screenInfo {
+			if keyHit(msg, a.keys.Attach) && a.info.row.Name != "" {
+				name := a.info.row.Name
+				return a, func() tea.Msg { return attachRequestMsg{name: name} }
+			}
+		}
+
+		// Banner clears on the next non-help key.
 		a.bannerErr = nil
 	}
 
-	// --- Forward to the active screen ---
+	// Forward to the active screen.
 	switch a.screen {
 	case screenSessions:
 		next, cmd := a.sessions.Update(msg)
@@ -184,7 +189,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-// View renders the active screen and a global help overlay if enabled.
 func (a App) View() string {
 	var body string
 	switch a.screen {
@@ -203,12 +207,71 @@ func (a App) View() string {
 	}
 
 	if a.bannerErr != nil {
-		body = a.styles.StatusBad.Render("⚠ "+a.bannerErr.Error()) + "\n\n" + body
+		banner := a.styles.StatusBad.Render("⚠ " + a.bannerErr.Error())
+		body = banner + "\n" + body
 	}
 
 	if a.showHelp {
-		overlay := a.styles.Frame.Render(a.help.View(a.keys))
-		body = lipgloss.JoinVertical(lipgloss.Left, body, overlay)
+		return a.renderHelpModal(body)
 	}
 	return body
+}
+
+// renderHelpModal paints a centered help card over the active screen.
+func (a App) renderHelpModal(body string) string {
+	rows := []string{
+		a.styles.ModalHeader.Render("muxc — keyboard shortcuts"),
+		"",
+		section("Navigation",
+			row("↑ k", "up"),
+			row("↓ j", "down"),
+			row("← h", "left"),
+			row("→ l", "right"),
+			row("enter", "select / open"),
+			row("esc", "back"),
+		),
+		"",
+		section("Sessions screen",
+			row("a", "attach to selected session"),
+			row("n", "create new session"),
+			row("K", "open kill picker"),
+			row("i", "open info"),
+			row("s", "cycle sort key"),
+			row("r", "force refresh now"),
+			row("d", "open doctor"),
+			row("m", "switch to mem view (sort by RSS)"),
+		),
+		"",
+		section("Info screen",
+			row("+/-", "increase/decrease transcript lines"),
+			row("a", "attach to this session"),
+			row("PgUp/PgDn", "scroll transcript"),
+		),
+		"",
+		section("Global",
+			row("?", "toggle this help"),
+			row("q  ^C", "quit"),
+		),
+		"",
+		a.styles.Faint.Render("press any key to dismiss"),
+	}
+	modal := a.styles.Modal.Render(strings.Join(rows, "\n"))
+	if a.width > 0 && a.height > 0 {
+		return lipgloss.Place(a.width, a.height,
+			lipgloss.Center, lipgloss.Center, modal,
+			lipgloss.WithWhitespaceChars(" "))
+	}
+	return modal
+}
+
+// section formats one help-modal section: a bold heading plus indented rows.
+func section(title string, lines ...string) string {
+	parts := append([]string{lipgloss.NewStyle().Bold(true).Render(title)}, lines...)
+	return strings.Join(parts, "\n")
+}
+
+// row formats one (key, label) line inside a help-modal section.
+func row(key, label string) string {
+	keyCol := lipgloss.NewStyle().Width(12).Foreground(colorPrimary).Bold(true).Render(key)
+	return "  " + keyCol + label
 }

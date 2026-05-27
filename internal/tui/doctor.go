@@ -12,8 +12,7 @@ import (
 )
 
 // doctorModel renders the 10 environment checks. ↑↓ navigates rows; Enter on
-// a row toggles its expanded message panel (useful when a FAIL has a long
-// remediation string).
+// a row toggles its expanded message panel.
 type doctorModel struct {
 	cfg       *config.Config
 	st        *state.State
@@ -23,6 +22,9 @@ type doctorModel struct {
 	cursor   int
 	expanded bool
 	loading  bool
+
+	width  int
+	height int
 
 	styles Styles
 	keys   KeyMap
@@ -39,7 +41,6 @@ func newDoctorModel(cfg *config.Config, st *state.State, configDir string, style
 	}
 }
 
-// doctorResultMsg carries the result of a doctor.Run call into the model.
 type doctorResultMsg struct{ checks []doctor.CheckResult }
 
 func runDoctorCmd(cfg *config.Config, st *state.State, configDir string) tea.Cmd {
@@ -57,6 +58,10 @@ func (m doctorModel) Update(msg tea.Msg) (doctorModel, tea.Cmd) {
 	case doctorResultMsg:
 		m.checks = msg.checks
 		m.loading = false
+		return m, nil
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
 		return m, nil
 	case tea.KeyMsg:
 		switch {
@@ -79,54 +84,75 @@ func (m doctorModel) Update(msg tea.Msg) (doctorModel, tea.Cmd) {
 }
 
 func (m doctorModel) View() string {
-	var b strings.Builder
-	b.WriteString(m.styles.Title.Render("muxc") + m.styles.Subtitle.Render("  ·  doctor"))
+	l := newLayout(m.styles, m.width)
+
+	right := ""
 	if m.loading {
-		b.WriteString(m.styles.Muted.Render("  · running checks…"))
+		right = m.styles.HeaderRefresh.Render("◌ running")
 	}
-	b.WriteString("\n\n")
+	header := l.header("doctor", right)
 
-	for i, c := range m.checks {
-		badge := m.styledBadge(c.Status)
-		row := badge + " " + c.Name
-		if i == m.cursor {
-			b.WriteString(m.styles.TableRowSel.Render("▸ " + row))
-		} else {
-			b.WriteString("  " + row)
+	var b strings.Builder
+	if len(m.checks) == 0 && m.loading {
+		b.WriteString(m.styles.Muted.Render("running 10 environment checks…"))
+	} else {
+		// Find max name width for alignment.
+		nameW := 0
+		for _, c := range m.checks {
+			if w := len(c.Name); w > nameW {
+				nameW = w
+			}
 		}
-		// Inline message for OK rows; expanded panel handled below.
-		if c.Status == doctor.StatusOK && c.Message != "" {
-			b.WriteString(m.styles.Muted.Render("  " + c.Message))
+		for i, c := range m.checks {
+			badge := m.styledBadge(c.Status)
+			name := c.Name + strings.Repeat(" ", nameW-len(c.Name))
+			line := badge + "  " + name
+			if c.Message != "" && c.Status == doctor.StatusOK {
+				line += "  " + m.styles.Faint.Render(c.Message)
+			}
+			if i == m.cursor {
+				line = m.styles.TableRowSel.Render("▸ " + line)
+			} else {
+				line = "  " + line
+			}
+			b.WriteString(line + "\n")
+
+			// Expanded detail panel under the selected row, for WARN/FAIL.
+			if m.expanded && i == m.cursor && c.Message != "" && c.Status != doctor.StatusOK {
+				detail := m.styles.Card.
+					BorderForeground(colorBorderFocus).
+					Render(m.styles.Strong.Render(c.Name) + "\n" + c.Message)
+				b.WriteString(detail + "\n")
+			}
 		}
-		b.WriteString("\n")
 	}
 
-	// Expanded panel: show the message of the selected row (especially useful
-	// for FAIL/WARN where guidance lives in the Message field).
-	if m.expanded && m.cursor < len(m.checks) {
-		sel := m.checks[m.cursor]
-		if sel.Message != "" {
-			panel := m.styles.Frame.Render(m.styles.Subtitle.Render(sel.Name) + "\n" + sel.Message)
-			b.WriteString("\n" + panel + "\n")
-		}
+	cardWidth := m.width - 2
+	if cardWidth < 40 {
+		cardWidth = 40
 	}
+	card := m.styles.Card.Width(cardWidth).Render(b.String())
 
-	footer := m.styles.Help.Render("↑↓ navigate · enter expand · r re-run · esc back · ^C quit")
-	b.WriteString("\n" + footer)
-	return b.String()
+	status := []statusSeg{
+		{"↑↓/jk", "select"},
+		{"enter", "toggle detail"},
+		{"r", "re-run"},
+		{"esc", "back"},
+		{"q", "quit"},
+	}
+	return l.compose(header, card, status)
 }
 
-// styledBadge returns the colored "[OK]" / "[WARN]" / "[FAIL]" badge with
-// adaptive Lip Gloss colours.
+// styledBadge renders a colored circle + label per status.
 func (m doctorModel) styledBadge(s doctor.CheckStatus) string {
 	switch s {
 	case doctor.StatusOK:
-		return m.styles.StatusOK.Render("[OK]  ")
+		return m.styles.StatusOK.Render("● OK  ")
 	case doctor.StatusWarn:
-		return m.styles.StatusWarn.Render("[WARN]")
+		return m.styles.StatusWarn.Render("● WARN")
 	case doctor.StatusFail:
-		return m.styles.StatusBad.Render("[FAIL]")
+		return m.styles.StatusBad.Render("● FAIL")
 	default:
-		return "[????]"
+		return "● ????"
 	}
 }

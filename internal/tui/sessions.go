@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/help"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -36,7 +35,6 @@ type sessionsModel struct {
 
 	styles Styles
 	keys   KeyMap
-	help   help.Model
 }
 
 func newSessionsModel(cfg *config.Config, st *state.State, styles Styles, keys KeyMap) sessionsModel {
@@ -45,20 +43,13 @@ func newSessionsModel(cfg *config.Config, st *state.State, styles Styles, keys K
 		st:     st,
 		styles: styles,
 		keys:   keys,
-		help:   newHelp(),
 	}
 }
 
-// Init kicks off the initial gather and the auto-refresh tick. The first
-// gather typically returns within ~50 ms; the View shows "refreshing…" only
-// when a manual `r` is in flight (which the Update handler toggles).
 func (m sessionsModel) Init() tea.Cmd {
 	return tea.Batch(gatherCmd(m.cfg, m.st), tickCmd())
 }
 
-// Update handles messages targeted at the sessions screen. Returns an updated
-// model plus optional commands. The root App is responsible for passing
-// WindowSizeMsg and dispatching screen-specific messages here.
 func (m sessionsModel) Update(msg tea.Msg) (sessionsModel, tea.Cmd) {
 	switch msg := msg.(type) {
 
@@ -72,7 +63,6 @@ func (m sessionsModel) Update(msg tea.Msg) (sessionsModel, tea.Cmd) {
 		m.err = nil
 		m.rows = msg.rows
 		session.SortRows(m.rows, sortKeys[m.sortIdx])
-		// Clamp cursor in case the list shrank.
 		if m.cursor >= len(m.rows) {
 			m.cursor = len(m.rows) - 1
 		}
@@ -82,7 +72,6 @@ func (m sessionsModel) Update(msg tea.Msg) (sessionsModel, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
-		// Schedule the next tick and request fresh data.
 		return m, tea.Batch(gatherCmd(m.cfg, m.st), tickCmd())
 
 	case tea.KeyMsg:
@@ -106,103 +95,144 @@ func (m sessionsModel) Update(msg tea.Msg) (sessionsModel, tea.Cmd) {
 	return m, nil
 }
 
-// View renders the sessions screen — header, table, optional banner, footer.
+// View renders the modern sessions screen: header bar, big bordered card with
+// the table inside, and a single status bar at the bottom.
 func (m sessionsModel) View() string {
-	var b strings.Builder
+	l := newLayout(m.styles, m.width)
 
-	header := m.styles.Title.Render("muxc") +
-		m.styles.Subtitle.Render(fmt.Sprintf("  ·  sessions (%d)  sort=%s", len(m.rows), sortKeys[m.sortIdx]))
+	// ── Header ──
+	crumb := fmt.Sprintf("sessions (%d)", len(m.rows))
+	rightBits := []string{m.styles.Muted.Render("sort=") + m.styles.Strong.Render(sortKeys[m.sortIdx])}
 	if m.loading {
-		header += m.styles.Muted.Render("  · refreshing…")
+		rightBits = append(rightBits, m.styles.HeaderRefresh.Render("◌ refreshing"))
+	} else if !m.lastRefresh.IsZero() {
+		rightBits = append(rightBits, m.styles.Muted.Render("↻ "+render.RelTime(m.lastRefresh)))
 	}
-	b.WriteString(header)
-	b.WriteString("\n\n")
+	header := l.header(crumb, strings.Join(rightBits, "  "))
 
+	// ── Body card ──
+	var body string
 	if m.err != nil {
-		b.WriteString(m.styles.StatusBad.Render("error: ") + m.err.Error() + "\n\n")
-	}
-
-	if len(m.rows) == 0 {
-		b.WriteString(m.styles.Muted.Render("no sessions yet — press 'n' to create one"))
-		b.WriteString("\n")
+		body = m.styles.StatusBad.Render("⚠ error: ") + m.err.Error()
+	} else if len(m.rows) == 0 {
+		body = m.styles.Muted.Render("no sessions yet")
+		body += "\n\n"
+		body += m.styles.Faint.Render("press ") + m.styles.Accent.Render("n") +
+			m.styles.Faint.Render(" to create one, or run a tmux session running ") +
+			m.styles.Strong.Render("claude") +
+			m.styles.Faint.Render(" — it will appear here automatically")
 	} else {
-		b.WriteString(m.renderTable())
-		b.WriteString("\n")
+		body = m.renderTable()
 	}
 
-	footerKeys := m.help.View(m.keys)
-	b.WriteString(m.styles.Help.Render(footerKeys))
+	cardWidth := m.width - 2
+	if cardWidth < 40 {
+		cardWidth = 40
+	}
+	card := m.styles.Card.Width(cardWidth).Render(body)
 
-	return b.String()
+	// ── Status bar ──
+	status := []statusSeg{
+		{"↑↓/jk", "select"},
+		{"enter", "info"},
+		{"a", "attach"},
+		{"n", "new"},
+		{"K", "kill"},
+		{"s", "sort"},
+		{"r", "refresh"},
+		{"d", "doctor"},
+		{"?", "help"},
+		{"q", "quit"},
+	}
+
+	return l.compose(header, card, status)
 }
 
-// renderTable draws the columnar session list with a cursor row.
+// renderTable lays out the sessions table inside the body card.
 func (m sessionsModel) renderTable() string {
 	headers := []string{"NAME", "PROJECT", "CLAUDE", "UPTIME", "IDLE", "MEM", "ATTACHED"}
-	colWidths := []int{0, 0, 0, 0, 0, 0, 0}
+	rights := map[int]bool{5: true} // MEM right-aligned
 
-	// Pre-compute column widths.
-	rows := make([][]string, len(m.rows))
+	colWidths := make([]int, len(headers))
+	for j, h := range headers {
+		colWidths[j] = lipgloss.Width(h)
+	}
+
+	// Pre-compute styled cells and widths.
 	home, _ := os.UserHomeDir()
+	type styledRow struct {
+		cells    []string
+		external bool
+	}
+	rows := make([]styledRow, len(m.rows))
+
 	for i, r := range m.rows {
-		name := r.Name
+		// NAME: star prefix for external, name in primary color when selected.
+		nameCell := r.Name
 		if r.IsExternal {
-			name = "★ " + name
+			nameCell = m.styles.BadgeExternal.Render("★ ") + r.Name
+		} else {
+			nameCell = "  " + r.Name
 		}
+
 		project := homeRel(r.ProjectPath, home)
 		truncLimit := m.cfg.Display.TruncatePath
 		if truncLimit > 0 {
 			project = render.LeftTruncate(project, truncLimit)
 		}
-		claudeCol := claudeDisplay(r)
-		row := []string{
-			name,
-			project,
-			claudeCol,
-			render.Duration(time.Duration(r.UptimeSeconds) * time.Second),
-			render.Duration(time.Duration(r.IdleSeconds) * time.Second),
-			render.Bytes(r.RSSPlusChildrenBytes),
-			ifelse(r.Attached, "yes", "no"),
+		if project == "" {
+			project = m.styles.Faint.Render("(unknown)")
 		}
-		rows[i] = row
-		for j, cell := range row {
-			if w := lipgloss.Width(cell); w > colWidths[j] {
+
+		claudeCol := claudeDisplay(r)
+		if claudeCol == "-" {
+			claudeCol = m.styles.Faint.Render("—")
+		} else {
+			claudeCol = m.styles.Secondary.Render(claudeCol)
+		}
+
+		uptime := render.Duration(time.Duration(r.UptimeSeconds) * time.Second)
+		idle := render.Duration(time.Duration(r.IdleSeconds) * time.Second)
+		mem := render.Bytes(r.RSSPlusChildrenBytes)
+
+		attached := m.styles.Faint.Render("no")
+		if r.Attached {
+			attached = m.styles.BadgeAttached.Render("● yes")
+		}
+
+		cells := []string{nameCell, project, claudeCol, uptime, idle, mem, attached}
+		rows[i] = styledRow{cells: cells, external: r.IsExternal}
+
+		for j, c := range cells {
+			if w := lipgloss.Width(c); w > colWidths[j] {
 				colWidths[j] = w
 			}
 		}
 	}
-	for j, h := range headers {
-		if w := lipgloss.Width(h); w > colWidths[j] {
-			colWidths[j] = w
-		}
-	}
 
-	// Render header.
+	// ── Header line ──
 	var b strings.Builder
+	headerCells := make([]string, len(headers))
 	for j, h := range headers {
-		b.WriteString(m.styles.TableHeader.Render(padRight(h, colWidths[j])))
+		headerCells[j] = padCol(h, colWidths[j], rights[j])
 	}
+	b.WriteString(m.styles.TableHeader.Render(strings.Join(headerCells, "  ")))
+	b.WriteString("\n")
+	b.WriteString(m.styles.Faint.Render(strings.Repeat("─", sumWidths(colWidths)+2*(len(colWidths)-1))))
 	b.WriteString("\n")
 
-	// Render rows.
+	// ── Body rows ──
 	for i, row := range rows {
-		var cells []string
-		for j, cell := range row {
-			cells = append(cells, padRight(cell, colWidths[j]))
+		cells := make([]string, len(row.cells))
+		for j, c := range row.cells {
+			cells[j] = padCol(c, colWidths[j], rights[j])
 		}
-		line := strings.Join(cells, " ")
+		line := strings.Join(cells, "  ")
 		if i == m.cursor {
-			b.WriteString(m.styles.TableRowSel.Render(line))
-		} else {
-			// Apply ExternalBadge tint to the first column of external rows.
-			if m.rows[i].IsExternal {
-				// Just colour the ★ prefix; lipgloss can't apply mid-string
-				// styles per-column, so we re-render the row with no border.
-				b.WriteString(m.styles.TableRow.Render(line))
-			} else {
-				b.WriteString(m.styles.TableRow.Render(line))
-			}
+			// Render selection as a bold accent stripe.
+			line = m.styles.TableRowSel.Render(line)
 		}
+		b.WriteString(line)
 		if i < len(rows)-1 {
 			b.WriteString("\n")
 		}
@@ -211,13 +241,33 @@ func (m sessionsModel) renderTable() string {
 	return b.String()
 }
 
-// padRight pads s with spaces to width, accounting for terminal-cell width.
-func padRight(s string, width int) string {
+// sumWidths totals an int slice.
+func sumWidths(ws []int) int {
+	total := 0
+	for _, w := range ws {
+		total += w
+	}
+	return total
+}
+
+// padCol pads s to width with spaces. If right, pads on the left so values
+// hug the right edge (useful for MEM).
+func padCol(s string, width int, right bool) string {
 	pad := width - lipgloss.Width(s)
 	if pad <= 0 {
 		return s
 	}
-	return s + strings.Repeat(" ", pad)
+	gap := strings.Repeat(" ", pad)
+	if right {
+		return gap + s
+	}
+	return s + gap
+}
+
+// padRight pads s with spaces to width, accounting for terminal-cell width.
+// Kept as an exported helper since tui_test.go still uses it.
+func padRight(s string, width int) string {
+	return padCol(s, width, false)
 }
 
 // claudeDisplay returns the CLAUDE column value with the same precedence as

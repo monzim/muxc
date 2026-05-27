@@ -17,16 +17,8 @@ import (
 	"github.com/monzim/muxc/internal/tmux"
 )
 
-// newFormModel is the screen for `muxc new`. Three fields:
-//
-//	project path  (text input, default = cwd)
-//	name override (text input, optional)
-//	skip launch?  (bool, toggle with space)
-//
-// Submit (Enter on the last field, or Ctrl+S anywhere) builds the launch
-// command and creates the tmux session via the internal/tmux helpers
-// directly. On success the model returns a sessionCreatedMsg so the App can
-// switch back to the sessions screen and refresh.
+// newFormModel is the screen for `muxc new`: project path, name override,
+// skip-launch toggle, submit button. Tab/↑↓ between fields; Enter submits.
 type newFormModel struct {
 	cfg *config.Config
 	st  *state.State
@@ -34,10 +26,13 @@ type newFormModel struct {
 	pathInput textinput.Model
 	nameInput textinput.Model
 	skipBox   bool
-	focusIdx  int // 0=path, 1=name, 2=skip toggle, 3=submit button
+	focusIdx  int
 
 	err     error
 	success string
+
+	width  int
+	height int
 
 	styles Styles
 	keys   KeyMap
@@ -53,18 +48,20 @@ const (
 
 func newNewFormModel(cfg *config.Config, st *state.State, styles Styles, keys KeyMap) newFormModel {
 	pathIn := textinput.New()
-	pathIn.Placeholder = "/path/to/project (default: current directory)"
+	pathIn.Placeholder = "/path/to/project"
 	if cwd, err := os.Getwd(); err == nil {
 		pathIn.SetValue(cwd)
 	}
 	pathIn.CharLimit = 1024
 	pathIn.Width = 60
+	pathIn.Prompt = "› "
 	pathIn.Focus()
 
 	nameIn := textinput.New()
-	nameIn.Placeholder = "optional override (default: dir basename)"
+	nameIn.Placeholder = "(optional) override session name"
 	nameIn.CharLimit = 64
 	nameIn.Width = 60
+	nameIn.Prompt = "› "
 
 	return newFormModel{
 		cfg:       cfg,
@@ -77,7 +74,6 @@ func newNewFormModel(cfg *config.Config, st *state.State, styles Styles, keys Ke
 	}
 }
 
-// reset clears errors / success state when re-entering the screen.
 func (m *newFormModel) reset() {
 	m.err = nil
 	m.success = ""
@@ -88,16 +84,16 @@ func (m *newFormModel) reset() {
 
 func (m newFormModel) Init() tea.Cmd { return textinput.Blink }
 
-// sessionCreatedMsg signals the App to switch back to the sessions screen
-// and trigger an immediate refresh.
-type sessionCreatedMsg struct {
-	name string
-}
+type sessionCreatedMsg struct{ name string }
 
 func (m newFormModel) Update(msg tea.Msg) (newFormModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case sessionCreatedMsg:
-		m.success = fmt.Sprintf("started %s", msg.name)
+		m.success = fmt.Sprintf("✓ session %s created", msg.name)
+		return m, nil
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -119,14 +115,12 @@ func (m newFormModel) Update(msg tea.Msg) (newFormModel, tea.Cmd) {
 				(m.focusIdx != newFormFocusPath && m.focusIdx != newFormFocusName) {
 				return m, m.submit()
 			}
-			// Enter on a text input — advance focus.
 			m.focusIdx = (m.focusIdx + 1) % newFormFocusCount
 			m.refocus()
 			return m, nil
 		}
 	}
 
-	// Forward to the focused text input.
 	var cmd tea.Cmd
 	switch m.focusIdx {
 	case newFormFocusPath:
@@ -149,51 +143,75 @@ func (m *newFormModel) refocus() {
 }
 
 func (m newFormModel) View() string {
+	l := newLayout(m.styles, m.width)
+	header := l.header("new session", "")
+
 	var b strings.Builder
 
-	b.WriteString(m.styles.Title.Render("muxc") + m.styles.Subtitle.Render("  ·  new session"))
+	// Path input.
+	b.WriteString(m.styles.FormLabel.Render("PROJECT PATH"))
+	b.WriteString("\n")
+	pv := m.pathInput.View()
+	if m.focusIdx == newFormFocusPath {
+		pv = m.styles.Accent.Render(pv)
+	}
+	b.WriteString(pv + "\n\n")
+
+	// Name input.
+	b.WriteString(m.styles.FormLabel.Render("NAME OVERRIDE") + "  " + m.styles.Faint.Render("(blank = use directory name)"))
+	b.WriteString("\n")
+	nv := m.nameInput.View()
+	if m.focusIdx == newFormFocusName {
+		nv = m.styles.Accent.Render(nv)
+	}
+	b.WriteString(nv + "\n\n")
+
+	// Skip checkbox.
+	mark := "[ ]"
+	if m.skipBox {
+		mark = m.styles.Accent.Render("[x]")
+	}
+	skipPrefix := "  "
+	if m.focusIdx == newFormFocusSkip {
+		skipPrefix = m.styles.Accent.Render("▸ ")
+	}
+	b.WriteString(skipPrefix + mark + "  skip launching claude  " + m.styles.Faint.Render("(--no-launch · space to toggle)"))
 	b.WriteString("\n\n")
 
-	field := func(label string, idx int, body string) string {
-		focused := m.focusIdx == idx
-		prefix := "  "
-		if focused {
-			prefix = m.styles.Accent.Render("▸ ")
-		}
-		return prefix + m.styles.Subtitle.Render(label) + "\n  " + body + "\n"
-	}
-
-	b.WriteString(field("project path", newFormFocusPath, m.pathInput.View()))
-	b.WriteString(field("name override", newFormFocusName, m.nameInput.View()))
-
-	skipMark := "[ ]"
-	if m.skipBox {
-		skipMark = m.styles.Accent.Render("[x]")
-	}
-	b.WriteString(field("skip launching claude", newFormFocusSkip, skipMark+" toggle with space"))
-
-	btnLabel := "[ submit ]"
+	// Submit button.
+	btn := "  submit  "
 	if m.focusIdx == newFormFocusSubmit {
-		btnLabel = m.styles.Accent.Render("[ submit ]")
+		b.WriteString("  " + m.styles.FormBtnFocus.Render(btn))
+	} else {
+		b.WriteString("  " + m.styles.FormBtn.Render(btn))
 	}
-	b.WriteString("  " + btnLabel + "\n")
+	b.WriteString("\n")
 
+	// Result feedback.
 	if m.err != nil {
-		b.WriteString("\n" + m.styles.StatusBad.Render("error: ") + m.err.Error() + "\n")
+		b.WriteString("\n" + m.styles.StatusBad.Render("⚠ "+m.err.Error()))
 	}
 	if m.success != "" {
-		b.WriteString("\n" + m.styles.StatusOK.Render(m.success) + "\n")
-		b.WriteString(m.styles.Muted.Render("press esc to return to sessions"))
-		b.WriteString("\n")
+		b.WriteString("\n" + m.styles.StatusOK.Render(m.success))
+		b.WriteString("\n" + m.styles.Faint.Render("returning to sessions…"))
 	}
 
-	footer := m.styles.Help.Render("tab/↑↓ field · enter submit · space toggle · esc back · ^C quit")
-	b.WriteString("\n" + footer)
-	return b.String()
+	cardWidth := m.width - 2
+	if cardWidth < 40 {
+		cardWidth = 40
+	}
+	card := m.styles.CardFocused.Width(cardWidth).Render(b.String())
+
+	status := []statusSeg{
+		{"tab/↑↓", "field"},
+		{"space", "toggle"},
+		{"enter", "submit"},
+		{"esc", "cancel"},
+		{"q", "quit"},
+	}
+	return l.compose(header, card, status)
 }
 
-// submit returns a tea.Cmd that creates the tmux session and emits a result
-// message. Runs the side effect off the UI thread.
 func (m newFormModel) submit() tea.Cmd {
 	pathRaw := strings.TrimSpace(m.pathInput.Value())
 	nameOverride := strings.TrimSpace(m.nameInput.Value())
@@ -201,7 +219,6 @@ func (m newFormModel) submit() tea.Cmd {
 	cfg := m.cfg
 	st := m.st
 	return func() tea.Msg {
-		// Resolve path: expand ~ and make absolute.
 		if strings.HasPrefix(pathRaw, "~") {
 			if home, err := os.UserHomeDir(); err == nil {
 				pathRaw = filepath.Join(home, strings.TrimPrefix(pathRaw, "~"))
@@ -216,23 +233,19 @@ func (m newFormModel) submit() tea.Cmd {
 			return errMsg{err: fmt.Errorf("project path: %w", err)}
 		}
 		if !info.IsDir() {
-			return errMsg{err: fmt.Errorf("project path is not a directory: %s", absPath)}
+			return errMsg{err: fmt.Errorf("not a directory: %s", absPath)}
 		}
 
-		// Derive base name.
 		base := nameOverride
 		if base == "" {
 			base = filepath.Base(absPath)
 		}
 		base = sanitizeNameTUI(base)
 		if base == "" {
-			return errMsg{err: fmt.Errorf("could not derive a usable session name from %q", nameOverride)}
+			return errMsg{err: fmt.Errorf("could not derive a usable session name")}
 		}
 		tmuxName := cfg.Defaults.Prefix + base
 
-		// Dedup against live sessions (lightweight — TUI doesn't try as hard
-		// as the cli new path, which adds -2/-3 suffixes; here we just
-		// surface the conflict so the user can pick a different name).
 		ctx := context.Background()
 		sessions, _ := tmux.ListSessions(ctx)
 		for _, s := range sessions {
@@ -246,7 +259,6 @@ func (m newFormModel) submit() tea.Cmd {
 		}
 
 		if !skip {
-			// Build launch command from defaults.
 			args := append([]string{cfg.Defaults.ClaudeBin}, cfg.Defaults.LaunchArgs...)
 			if cfg.Defaults.NameSessions {
 				args = append(args, "-n", base)
@@ -257,7 +269,6 @@ func (m newFormModel) submit() tea.Cmd {
 			}
 		}
 
-		// Persist state.
 		st.Upsert(tmuxName, state.SessionEntry{
 			ProjectPath:       absPath,
 			ClaudeSessionName: base,
@@ -270,9 +281,7 @@ func (m newFormModel) submit() tea.Cmd {
 	}
 }
 
-// sanitizeNameTUI mirrors the cli's sanitizeName logic without re-importing
-// cli (which would re-introduce the cycle). Lowercase, replace
-// non-[A-Za-z0-9_-] with '-', collapse repeats, trim hyphens.
+// sanitizeNameTUI mirrors the cli's sanitizeName logic.
 func sanitizeNameTUI(s string) string {
 	s = strings.ToLower(s)
 	var b strings.Builder
@@ -289,10 +298,8 @@ func sanitizeNameTUI(s string) string {
 			}
 		}
 	}
-	out := strings.Trim(b.String(), "-")
-	return out
+	return strings.Trim(b.String(), "-")
 }
 
-// Ensure unused-import safety: lipgloss is used via Styles only above; this
-// var keeps the import explicit even if some style is removed later.
+// _ keeps lipgloss imported for future styling tweaks.
 var _ = lipgloss.NewStyle

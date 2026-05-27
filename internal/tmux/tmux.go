@@ -187,12 +187,26 @@ func HasSession(ctx context.Context, name string) (bool, error) {
 // Attach replaces the current process with tmux attach via syscall.Exec.
 // If detach is true, passes -d so other clients are detached (spec §11.3).
 //
+// If $TMUX is set (we're already inside tmux), Attach uses `switch-client -t
+// <name>` instead — nesting tmux refuses with "sessions should be nested with
+// care, unset $TMUX to force". switch-client moves the existing client to
+// the target session cleanly, which is what users actually want when running
+// muxc from inside another tmux pane.
+//
 // This function never returns on success. Update state BEFORE calling it.
 // Not suitable for unit tests — inject a fake via an interface in CLI commands.
 func Attach(name string, detach bool) error {
 	tmuxBin, err := exec.LookPath("tmux")
 	if err != nil {
 		return fmt.Errorf("tmux not found in PATH: %w", err)
+	}
+
+	// Nested case: we're already inside tmux. Use switch-client so the
+	// current client jumps to the target session without trying to nest.
+	if os.Getenv("TMUX") != "" {
+		fullArgs := tmuxArgs("switch-client", "-t", name)
+		argv := append([]string{"tmux"}, fullArgs...)
+		return syscall.Exec(tmuxBin, argv, syscall.Environ())
 	}
 
 	// Build args via tmuxArgs so the private socket is honoured when set.

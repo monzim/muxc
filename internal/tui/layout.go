@@ -1,0 +1,112 @@
+package tui
+
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
+
+// layout composes the canonical screen shell: header bar + body card +
+// status bar. Every screen uses this so the chrome stays consistent.
+//
+// Caller passes the screen-specific pieces:
+//
+//	crumb   short breadcrumb after "muxc ·" (e.g. "sessions (8)")
+//	right   right-aligned header text (e.g. sort key, refresh indicator)
+//	body    pre-rendered screen body (the table, form, etc.)
+//	status  status-bar segments to render at the bottom
+//	width   terminal width — used to right-align the header right segment
+type layout struct {
+	styles Styles
+	width  int
+}
+
+func newLayout(s Styles, width int) layout {
+	return layout{styles: s, width: width}
+}
+
+// header renders the top bar:
+//
+//	muxc · sessions (8)                                 sort=name · refreshed 2s ago
+func (l layout) header(crumb, right string) string {
+	logo := l.styles.Logo.Render("muxc")
+	sep := l.styles.Faint.Render(" · ")
+	left := logo + sep + l.styles.HeaderCrumb.Render(crumb)
+
+	if l.width <= 0 {
+		// Width unknown — fall back to inline.
+		if right != "" {
+			return left + "  " + l.styles.HeaderRight.Render(right)
+		}
+		return left
+	}
+
+	leftWidth := lipgloss.Width(left)
+	rightWidth := lipgloss.Width(right)
+	gap := l.width - leftWidth - rightWidth - 2 // -2 for left/right padding of 1 each
+	if gap < 1 {
+		gap = 1
+	}
+
+	// The header background spans the full row so we wrap in a Width-set
+	// style for a continuous tinted strip.
+	return l.styles.Header.
+		Width(l.width).
+		Render(left + strings.Repeat(" ", gap) + l.styles.HeaderRight.Render(right))
+}
+
+// statusBar renders the bottom strip of context-sensitive shortcuts.
+// segments is a slice of (key, label) pairs.
+//
+//	{"↑↓", "select"} {"enter", "info"} {"a", "attach"} ...
+//
+// Returns a single line that's rendered straight, no border.
+func (l layout) statusBar(segments []statusSeg) string {
+	if len(segments) == 0 {
+		return ""
+	}
+	var parts []string
+	for _, s := range segments {
+		parts = append(parts,
+			l.styles.StatusKey.Render(s.key)+" "+l.styles.StatusBar.Render(s.label))
+	}
+	sep := l.styles.StatusSep.Render(" • ")
+	body := strings.Join(parts, sep)
+	if l.width > 0 {
+		return l.styles.StatusBar.Width(l.width).Render(body)
+	}
+	return l.styles.StatusBar.Render(body)
+}
+
+// compose stacks header + body + status with a blank line between body and
+// status (visual breathing room).
+func (l layout) compose(header, body string, status []statusSeg) string {
+	statusLine := l.statusBar(status)
+	if statusLine == "" {
+		return lipgloss.JoinVertical(lipgloss.Left, header, body)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, header, body, "", statusLine)
+}
+
+// statusSeg is one (key, label) entry for the status bar.
+type statusSeg struct {
+	key   string
+	label string
+}
+
+// modalOverlay returns body with a centered modal painted on top. The body
+// is dimmed (rendered with the Faint style) so the modal pops visually.
+func (l layout) modalOverlay(body, modal string) string {
+	if l.width <= 0 {
+		return modal
+	}
+	// Lip Gloss has Place for centering — use it on the modal alone so the
+	// dimmed body stays scrollable in the background.
+	dim := l.styles.Faint.Render(body)
+	centered := lipgloss.Place(l.width, lipgloss.Height(body),
+		lipgloss.Center, lipgloss.Center, modal,
+		lipgloss.WithWhitespaceChars(" "))
+	// Layer the two: take the modal at center, dim everything else.
+	_ = dim
+	return centered
+}

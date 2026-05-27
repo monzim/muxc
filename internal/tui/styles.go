@@ -2,80 +2,201 @@ package tui
 
 import "github.com/charmbracelet/lipgloss"
 
-// Color palette — adaptive so the same set looks reasonable on both light
-// and dark terminal backgrounds.
+// Palette — adaptive so the same set looks right on both light and dark
+// terminal backgrounds. Inspired by gh dash, lazygit, k9s.
 var (
-	colorAccent  = lipgloss.AdaptiveColor{Light: "#3B82F6", Dark: "#60A5FA"}
-	colorMuted   = lipgloss.AdaptiveColor{Light: "#6B7280", Dark: "#9CA3AF"}
-	colorTitleFG = lipgloss.AdaptiveColor{Light: "#1F2937", Dark: "#E5E7EB"}
-	colorOK      = lipgloss.AdaptiveColor{Light: "#15803D", Dark: "#22C55E"}
-	colorWarn    = lipgloss.AdaptiveColor{Light: "#B45309", Dark: "#F59E0B"}
-	colorBad     = lipgloss.AdaptiveColor{Light: "#B91C1C", Dark: "#EF4444"}
-	colorExt     = lipgloss.AdaptiveColor{Light: "#C2410C", Dark: "#FB923C"} // external session marker
-	colorBorder  = lipgloss.AdaptiveColor{Light: "#D1D5DB", Dark: "#374151"}
+	// Primary accent for selections, focus, active borders.
+	colorPrimary = lipgloss.AdaptiveColor{Light: "#5B6CFF", Dark: "#7C8CFF"}
+	// Secondary accent for headings and badges.
+	colorSecondary = lipgloss.AdaptiveColor{Light: "#A855F7", Dark: "#C084FC"}
+	// Subtle background tint for selected rows / cards.
+	colorSelBG = lipgloss.AdaptiveColor{Light: "#E0E7FF", Dark: "#1E2240"}
+
+	// Foregrounds.
+	colorFG      = lipgloss.AdaptiveColor{Light: "#0F172A", Dark: "#E2E8F0"}
+	colorMuted   = lipgloss.AdaptiveColor{Light: "#64748B", Dark: "#94A3B8"}
+	colorFaint   = lipgloss.AdaptiveColor{Light: "#94A3B8", Dark: "#64748B"}
+	colorInverse = lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#0F172A"}
+
+	// Status colours.
+	colorOK   = lipgloss.AdaptiveColor{Light: "#059669", Dark: "#10B981"}
+	colorWarn = lipgloss.AdaptiveColor{Light: "#D97706", Dark: "#F59E0B"}
+	colorBad  = lipgloss.AdaptiveColor{Light: "#DC2626", Dark: "#F87171"}
+	colorExt  = lipgloss.AdaptiveColor{Light: "#EA580C", Dark: "#FB923C"}
+
+	// Structural lines.
+	colorBorder      = lipgloss.AdaptiveColor{Light: "#CBD5E1", Dark: "#334155"}
+	colorBorderFocus = colorPrimary
+
+	// Header background.
+	colorHeaderBG = lipgloss.AdaptiveColor{Light: "#F1F5F9", Dark: "#0B1224"}
 )
 
 // Styles bundles every Lip Gloss style the TUI uses so theming lives in one
-// place. Wave 2+ subscreens read from this struct.
+// place and screens stay consistent.
 type Styles struct {
-	// Top header bar.
-	Title    lipgloss.Style
-	Subtitle lipgloss.Style
+	// Header bar (top of every screen).
+	Header        lipgloss.Style
+	HeaderTitle   lipgloss.Style
+	HeaderCrumb   lipgloss.Style
+	HeaderRight   lipgloss.Style
+	HeaderRefresh lipgloss.Style
 
-	// Status colours for doctor + log messages.
+	// Status bar (bottom of every screen). Pre-styled segments.
+	StatusBar lipgloss.Style
+	StatusKey lipgloss.Style
+	StatusSep lipgloss.Style
+
+	// Content area — large bordered card holding the screen body.
+	Card        lipgloss.Style
+	CardFocused lipgloss.Style
+
+	// Table cells.
+	TableHeader lipgloss.Style
+	TableRow    lipgloss.Style
+	TableRowSel lipgloss.Style
+
+	// Inline badges.
+	BadgeExternal lipgloss.Style
+	BadgeAttached lipgloss.Style
+	BadgeIdle     lipgloss.Style
+
+	// Status labels.
 	StatusOK   lipgloss.Style
 	StatusWarn lipgloss.Style
 	StatusBad  lipgloss.Style
 
-	// Sessions table.
-	TableHeader   lipgloss.Style
-	TableRow      lipgloss.Style
-	TableRowSel   lipgloss.Style
-	ExternalBadge lipgloss.Style // "★" prefix on external rows
+	// Accents.
+	Accent    lipgloss.Style
+	Secondary lipgloss.Style
+	Muted     lipgloss.Style
+	Faint     lipgloss.Style
+	Strong    lipgloss.Style
 
-	// Generic accents.
-	Accent lipgloss.Style
-	Muted  lipgloss.Style
+	// Key/value blocks (info screen).
+	KvKey   lipgloss.Style
+	KvValue lipgloss.Style
 
-	// Frame around screens with content boundaries.
-	Frame lipgloss.Style
+	// Form pieces.
+	FormLabel      lipgloss.Style
+	FormInputFocus lipgloss.Style
+	FormBtn        lipgloss.Style
+	FormBtnFocus   lipgloss.Style
 
-	// Help footer.
-	Help lipgloss.Style
+	// Modal overlay for the help screen.
+	Modal       lipgloss.Style
+	ModalHeader lipgloss.Style
+
+	// Logo styling used in the header.
+	Logo lipgloss.Style
 }
 
-// DefaultStyles returns the project's "modern dark" palette.
+// DefaultStyles returns the project palette. Adaptive colours mean the same
+// instance looks right on both light and dark terminals.
 func DefaultStyles() Styles {
 	return Styles{
-		Title: lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorTitleFG).
-			Padding(0, 1),
-		Subtitle: lipgloss.NewStyle().
-			Foreground(colorMuted),
-		StatusOK:   lipgloss.NewStyle().Foreground(colorOK).Bold(true),
-		StatusWarn: lipgloss.NewStyle().Foreground(colorWarn).Bold(true),
-		StatusBad:  lipgloss.NewStyle().Foreground(colorBad).Bold(true),
-		TableHeader: lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorAccent).
-			Padding(0, 1),
-		TableRow: lipgloss.NewStyle().
-			Padding(0, 1),
-		TableRowSel: lipgloss.NewStyle().
+		Header: lipgloss.NewStyle().
 			Padding(0, 1).
+			Background(colorHeaderBG).
+			Foreground(colorFG),
+		HeaderTitle: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(colorAccent).
-			Background(lipgloss.AdaptiveColor{Light: "#E5E7EB", Dark: "#1F2937"}),
-		ExternalBadge: lipgloss.NewStyle().Foreground(colorExt).Bold(true),
-		Accent:        lipgloss.NewStyle().Foreground(colorAccent),
-		Muted:         lipgloss.NewStyle().Foreground(colorMuted),
-		Frame: lipgloss.NewStyle().
+			Foreground(colorPrimary),
+		HeaderCrumb: lipgloss.NewStyle().
+			Foreground(colorMuted),
+		HeaderRight: lipgloss.NewStyle().
+			Foreground(colorMuted).
+			Padding(0, 1),
+		HeaderRefresh: lipgloss.NewStyle().
+			Foreground(colorSecondary).
+			Bold(true),
+
+		StatusBar: lipgloss.NewStyle().
+			Padding(0, 1).
+			Foreground(colorMuted),
+		StatusKey: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorPrimary),
+		StatusSep: lipgloss.NewStyle().
+			Foreground(colorFaint),
+
+		Card: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorBorder).
 			Padding(0, 1),
-		Help: lipgloss.NewStyle().
-			Foreground(colorMuted).
+		CardFocused: lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorBorderFocus).
 			Padding(0, 1),
+
+		TableHeader: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorSecondary).
+			Padding(0, 0),
+		TableRow: lipgloss.NewStyle().
+			Padding(0, 0).
+			Foreground(colorFG),
+		TableRowSel: lipgloss.NewStyle().
+			Padding(0, 0).
+			Bold(true).
+			Foreground(colorPrimary).
+			Background(colorSelBG),
+
+		BadgeExternal: lipgloss.NewStyle().
+			Foreground(colorExt).
+			Bold(true),
+		BadgeAttached: lipgloss.NewStyle().
+			Foreground(colorOK).
+			Bold(true),
+		BadgeIdle: lipgloss.NewStyle().
+			Foreground(colorFaint),
+
+		StatusOK:   lipgloss.NewStyle().Foreground(colorOK).Bold(true),
+		StatusWarn: lipgloss.NewStyle().Foreground(colorWarn).Bold(true),
+		StatusBad:  lipgloss.NewStyle().Foreground(colorBad).Bold(true),
+
+		Accent:    lipgloss.NewStyle().Foreground(colorPrimary).Bold(true),
+		Secondary: lipgloss.NewStyle().Foreground(colorSecondary),
+		Muted:     lipgloss.NewStyle().Foreground(colorMuted),
+		Faint:     lipgloss.NewStyle().Foreground(colorFaint),
+		Strong:    lipgloss.NewStyle().Foreground(colorFG).Bold(true),
+
+		KvKey: lipgloss.NewStyle().
+			Foreground(colorMuted).
+			Width(14),
+		KvValue: lipgloss.NewStyle().
+			Foreground(colorFG),
+
+		FormLabel: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorSecondary),
+		FormInputFocus: lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder(), false, false, true, false).
+			BorderForeground(colorPrimary),
+		FormBtn: lipgloss.NewStyle().
+			Padding(0, 2).
+			Foreground(colorMuted).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorBorder),
+		FormBtnFocus: lipgloss.NewStyle().
+			Padding(0, 2).
+			Bold(true).
+			Foreground(colorInverse).
+			Background(colorPrimary).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorPrimary),
+
+		Modal: lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorPrimary).
+			Padding(1, 2),
+		ModalHeader: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorPrimary).
+			MarginBottom(1),
+
+		Logo: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorPrimary),
 	}
 }

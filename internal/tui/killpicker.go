@@ -37,6 +37,9 @@ type killpickerModel struct {
 	err     error
 	success string
 
+	width  int
+	height int
+
 	styles Styles
 	keys   KeyMap
 }
@@ -91,6 +94,10 @@ func (m killpickerModel) Init() tea.Cmd { return nil }
 
 func (m killpickerModel) Update(msg tea.Msg) (killpickerModel, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
 	case killCompleteMsg:
 		m.success = fmt.Sprintf("killed %d", msg.count)
 		m.stage = killStageDone
@@ -277,13 +284,15 @@ func (m killpickerModel) executeStaleKill() tea.Cmd {
 }
 
 func (m killpickerModel) View() string {
+	l := newLayout(m.styles, m.width)
+	header := l.header("kill", "")
+
 	var b strings.Builder
-	b.WriteString(m.styles.Title.Render("muxc") + m.styles.Subtitle.Render("  ·  kill"))
-	b.WriteString("\n\n")
+	var statusSegs []statusSeg
 
 	switch m.stage {
 	case killStageMode:
-		b.WriteString(m.styles.Subtitle.Render("Pick a kill mode:") + "\n\n")
+		b.WriteString(m.styles.FormLabel.Render("KILL MODE") + "\n\n")
 		for i, mode := range killModes {
 			marker := "  "
 			if i == m.modeIdx {
@@ -291,33 +300,53 @@ func (m killpickerModel) View() string {
 			}
 			label := mode.label
 			if mode.label == "--idle" && i == m.modeIdx {
-				label = fmt.Sprintf("--idle %s", m.idleStr+"_")
+				label = fmt.Sprintf("--idle %s_", m.idleStr)
 			}
-			b.WriteString(marker + label + "  " + m.styles.Muted.Render(mode.help) + "\n")
+			line := marker + m.styles.Strong.Render(label) + "  " + m.styles.Faint.Render(mode.help)
+			if i == m.modeIdx {
+				line = m.styles.TableRowSel.Render(line)
+			}
+			b.WriteString(line + "\n")
 		}
-		b.WriteString("\n" + m.styles.Help.Render("↑↓ select · type duration for --idle · enter confirm · esc back · ^C quit"))
+		statusSegs = []statusSeg{
+			{"↑↓/jk", "select"},
+			{"type", "duration for --idle"},
+			{"enter", "confirm"},
+			{"esc", "back"},
+			{"q", "quit"},
+		}
 
 	case killStageConfirm:
-		b.WriteString(m.styles.StatusWarn.Render(fmt.Sprintf("Confirm: kill %d session(s)?", len(m.victims))) + "\n\n")
+		b.WriteString(m.styles.StatusWarn.Render(fmt.Sprintf("⚠ kill %d session(s)?", len(m.victims))) + "\n\n")
 		for _, v := range m.victims {
-			b.WriteString("  " + v.Name + "\n")
+			b.WriteString("  " + m.styles.Strong.Render(v.Name) + "\n")
 		}
-		b.WriteString("\n" + m.styles.Help.Render("y to confirm · n/esc to abort"))
+		statusSegs = []statusSeg{
+			{"y", "confirm"},
+			{"n/esc", "abort"},
+		}
 
 	case killStageDone:
 		if m.err != nil {
-			b.WriteString(m.styles.StatusBad.Render("error: ") + m.err.Error() + "\n")
+			b.WriteString(m.styles.StatusBad.Render("⚠ ") + m.err.Error() + "\n")
 		}
 		if m.success != "" {
-			b.WriteString(m.styles.StatusOK.Render(m.success) + "\n")
+			b.WriteString(m.styles.StatusOK.Render("✓ ") + m.success + "\n")
 		}
-		b.WriteString("\n" + m.styles.Help.Render("press esc to return to sessions"))
+		statusSegs = []statusSeg{{"esc", "back to sessions"}, {"q", "quit"}}
 	}
 
 	if m.err != nil && m.stage != killStageDone {
-		b.WriteString("\n" + m.styles.StatusBad.Render(m.err.Error()))
+		b.WriteString("\n" + m.styles.StatusBad.Render("⚠ "+m.err.Error()))
 	}
-	return b.String()
+
+	cardWidth := m.width - 2
+	if cardWidth < 40 {
+		cardWidth = 40
+	}
+	card := m.styles.CardFocused.Width(cardWidth).Render(b.String())
+
+	return l.compose(header, card, statusSegs)
 }
 
 // isDurationChar accepts characters that may appear in a Go duration string

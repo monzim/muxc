@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/monzim/muxc/internal/claude"
 	"github.com/monzim/muxc/internal/config"
@@ -24,12 +25,15 @@ type infoModel struct {
 	cfg *config.Config
 
 	row            session.Row
-	procLines      []string // pre-rendered process tree lines
+	procLines      []string
 	transcriptPath string
 	transcript     []claude.Entry
 	tailLines      int
 
 	viewport viewport.Model
+
+	width  int
+	height int
 
 	styles Styles
 	keys   KeyMap
@@ -83,7 +87,7 @@ func buildProcTreeCmd(row session.Row) tea.Cmd {
 				cmdStr = "(no cmdline)"
 			}
 			rss, _ := tree.RSS(pid)
-			lines = append(lines, fmt.Sprintf("  %d  %s  %s", pid, render.Bytes(rss), cmdStr))
+			lines = append(lines, fmt.Sprintf("%6d  %10s  %s", pid, render.Bytes(rss), cmdStr))
 		}
 		return procTreeMsg{lines: lines}
 	}
@@ -141,11 +145,14 @@ func (m infoModel) Update(msg tea.Msg) (infoModel, tea.Cmd) {
 			}
 		}
 	case tea.WindowSizeMsg:
-		// Leave room for header + footer (~6 lines).
-		m.viewport.Width = msg.Width
-		m.viewport.Height = msg.Height - 6
-		if m.viewport.Height < 5 {
-			m.viewport.Height = 5
+		m.width = msg.Width
+		m.height = msg.Height
+		// Card subtracts: borders (2) + padding (2). Viewport sits inside,
+		// minus header (1) + status (2) + breathing rows.
+		m.viewport.Width = msg.Width - 6
+		m.viewport.Height = msg.Height - 14
+		if m.viewport.Height < 6 {
+			m.viewport.Height = 6
 		}
 		m.refreshViewport()
 		return m, nil
@@ -155,43 +162,75 @@ func (m infoModel) Update(msg tea.Msg) (infoModel, tea.Cmd) {
 	return m, cmd
 }
 
+// refreshViewport rebuilds the scrollable content (key/value block + process
+// tree + transcript) and pushes it into the viewport.
 func (m *infoModel) refreshViewport() {
+	r := m.row
 	var b strings.Builder
 
-	// Session block.
-	r := m.row
-	b.WriteString(m.styles.Subtitle.Render("session") + "\n")
+	// ── Identity card ──
+	b.WriteString(m.styles.Secondary.Render("┐ SESSION") + "\n")
 	kv := func(k, v string) {
-		b.WriteString(fmt.Sprintf("  %s  %s\n", m.styles.Muted.Render(k+":"), v))
-	}
-	kv("name       ", r.Name)
-	kv("project    ", r.ProjectPath)
-	kv("created    ", r.CreatedAt.Local().Format(time.RFC3339))
-	kv("idle       ", render.Duration(time.Duration(r.IdleSeconds)*time.Second))
-	kv("mem        ", render.Bytes(r.RSSPlusChildrenBytes))
-	kv("pane pid   ", fmt.Sprintf("%d", r.PanePID))
-	kv("claude pid ", fmt.Sprintf("%d", r.ClaudePID))
-	kv("claude name", r.ClaudeSessionName)
-	kv("claude id  ", r.ClaudeSessionID)
-
-	// Process tree.
-	if len(m.procLines) > 0 {
-		b.WriteString("\n" + m.styles.Subtitle.Render("process tree") + "\n")
-		for _, line := range m.procLines {
-			b.WriteString(line + "\n")
+		if v == "" {
+			v = m.styles.Faint.Render("—")
 		}
+		b.WriteString("  " + m.styles.KvKey.Render(k) + "  " + m.styles.KvValue.Render(v) + "\n")
+	}
+	nameDisplay := r.Name
+	if r.IsExternal {
+		nameDisplay = m.styles.BadgeExternal.Render("★ ") + r.Name + " " + m.styles.Faint.Render("(external)")
+	}
+	kv("name", nameDisplay)
+	kv("project", r.ProjectPath)
+	kv("created", r.CreatedAt.Local().Format("2006-01-02 15:04:05"))
+	kv("uptime", render.Duration(time.Duration(r.UptimeSeconds)*time.Second))
+	kv("idle", render.Duration(time.Duration(r.IdleSeconds)*time.Second))
+	attached := m.styles.Faint.Render("no")
+	if r.Attached {
+		attached = m.styles.BadgeAttached.Render(fmt.Sprintf("● yes (%d client(s))", r.AttachedClients))
+	}
+	kv("attached", attached)
+	kv("tmux id", r.TmuxSessionID)
+
+	b.WriteString("\n")
+
+	// ── Claude block ──
+	b.WriteString(m.styles.Secondary.Render("┐ CLAUDE") + "\n")
+	claudeName := r.ClaudeSessionName
+	if claudeName == "" {
+		claudeName = m.styles.Faint.Render("(no name)")
+	}
+	kv("name", claudeName)
+	kv("session id", r.ClaudeSessionID)
+	if r.ClaudePID > 0 {
+		kv("pid", fmt.Sprintf("%d", r.ClaudePID))
+	} else {
+		kv("pid", m.styles.Faint.Render("(not detected)"))
+	}
+	kv("rss (claude)", render.Bytes(r.RSSBytes))
+	kv("rss (+kids)", render.Bytes(r.RSSPlusChildrenBytes))
+	kv("transcript", m.transcriptPath)
+
+	b.WriteString("\n")
+
+	// ── Process tree ──
+	if len(m.procLines) > 0 {
+		b.WriteString(m.styles.Secondary.Render("┐ PROCESS TREE") + "\n")
+		b.WriteString("  " + m.styles.Faint.Render(fmt.Sprintf("%6s  %10s  %s", "pid", "rss", "cmdline")) + "\n")
+		for _, line := range m.procLines {
+			b.WriteString("  " + line + "\n")
+		}
+		b.WriteString("\n")
 	}
 
-	// Transcript.
-	b.WriteString("\n" + m.styles.Subtitle.Render(fmt.Sprintf("transcript (tail %d, +/- to adjust)", m.tailLines)) + "\n")
-	if m.transcriptPath != "" {
-		b.WriteString(m.styles.Muted.Render("  "+m.transcriptPath) + "\n\n")
-	}
+	// ── Transcript tail ──
+	b.WriteString(m.styles.Secondary.Render(fmt.Sprintf("┐ TRANSCRIPT TAIL (%d lines, +/- to adjust)", m.tailLines)) + "\n")
 	if len(m.transcript) == 0 {
-		b.WriteString(m.styles.Muted.Render("  (no transcript or session never written)") + "\n")
+		b.WriteString("  " + m.styles.Faint.Render("(no transcript or session never written to)") + "\n")
 	} else {
 		for _, e := range m.transcript {
-			b.WriteString("  " + m.styles.Accent.Render("["+e.Role+"]") + " " + e.Content + "\n")
+			tag := m.styles.Accent.Render("[" + e.Role + "]")
+			b.WriteString("  " + tag + " " + e.Content + "\n")
 		}
 	}
 
@@ -199,11 +238,25 @@ func (m *infoModel) refreshViewport() {
 }
 
 func (m infoModel) View() string {
-	var b strings.Builder
-	b.WriteString(m.styles.Title.Render("muxc") +
-		m.styles.Subtitle.Render("  ·  info  ·  "+m.row.Name))
-	b.WriteString("\n\n")
-	b.WriteString(m.viewport.View())
-	b.WriteString("\n" + m.styles.Help.Render("↑↓/PgUp/PgDn scroll · +/- transcript lines · esc back · ^C quit"))
-	return b.String()
+	l := newLayout(m.styles, m.width)
+
+	header := l.header("info · "+m.row.Name, "")
+
+	cardWidth := m.width - 2
+	if cardWidth < 40 {
+		cardWidth = 40
+	}
+	card := m.styles.Card.Width(cardWidth).Render(m.viewport.View())
+
+	status := []statusSeg{
+		{"↑↓/jk", "scroll"},
+		{"+/-", "transcript lines"},
+		{"a", "attach"},
+		{"esc", "back"},
+		{"q", "quit"},
+	}
+	return l.compose(header, card, status)
 }
+
+// unused (kept for future per-row styling)
+var _ = lipgloss.NormalBorder
