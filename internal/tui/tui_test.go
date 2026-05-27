@@ -127,6 +127,60 @@ func TestSessionsModel_SortKeyCycles(t *testing.T) {
 	}
 }
 
+func TestSanitizeNameTUI(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"my-project", "my-project"},
+		{"My Project", "my-project"},
+		{"  trim  ", "trim"},
+		{"....", ""},
+		{"snake_case", "snake_case"},
+		{"a/b/c", "a-b-c"},
+		{"weird!!chars", "weird-chars"},
+		{"---hello---", "hello"},
+	}
+	for _, c := range cases {
+		if got := sanitizeNameTUI(c.in); got != c.want {
+			t.Errorf("sanitizeNameTUI(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestKillPickerAdvanceSelected(t *testing.T) {
+	cfg := config.DefaultConfig()
+	st := &state.State{Version: 1, Sessions: map[string]state.SessionEntry{}}
+	m := newKillpickerModel(cfg, st, DefaultStyles(), DefaultKeyMap())
+	m.reset("muxc-foo")
+	m.modeIdx = 0 // "selected"
+
+	next, cmd := m.advance()
+	if cmd != nil {
+		t.Errorf("selected mode should not return a cmd (no-op transition)")
+	}
+	if next.stage != killStageConfirm {
+		t.Errorf("stage: got %v, want killStageConfirm", next.stage)
+	}
+	if len(next.victims) != 1 || next.victims[0].Name != "muxc-foo" {
+		t.Errorf("victims: got %v, want [{muxc-foo}]", next.victims)
+	}
+}
+
+func TestKillPickerAdvanceIdleInvalid(t *testing.T) {
+	cfg := config.DefaultConfig()
+	st := &state.State{Version: 1, Sessions: map[string]state.SessionEntry{}}
+	m := newKillpickerModel(cfg, st, DefaultStyles(), DefaultKeyMap())
+	m.reset("")
+	m.modeIdx = 1 // "--idle"
+	m.idleStr = "garbage"
+
+	next, _ := m.advance()
+	if next.err == nil {
+		t.Error("expected an err for unparseable duration")
+	}
+	if next.stage != killStageMode {
+		t.Error("stage should stay on mode picker after invalid duration")
+	}
+}
+
 // TestNewApp_AttachTargetInitiallyEmpty guards the contract used by tui.Run.
 func TestNewApp_AttachTargetInitiallyEmpty(t *testing.T) {
 	cfg := config.DefaultConfig()

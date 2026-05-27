@@ -26,8 +26,8 @@ const (
 // Re-export the gather + sort + filter API so existing call sites compile
 // unchanged. Implementation lives in internal/session/gather.go.
 var (
-	Gather        = session.Gather
-	SortRows      = session.SortRows
-	FilterByGlob  = session.FilterByGlob
-	FilterByMode  = session.FilterByMode
+	Gather       = session.Gather
+	SortRows     = session.SortRows
+	FilterByGlob = session.FilterByGlob
+	FilterByMode = session.FilterByMode
 )
