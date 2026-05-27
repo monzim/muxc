@@ -1,0 +1,5 @@
+{"type":"system","content":"system prompt here"}
+{"type":"summary","content":"some summary content"}
+{"type":"meta","name":"auth-refactor","sessionName":"auth-refactor"}
+{"type":"user","role":"user","message":{"role":"user","content":"Hello"}}
+{"type":"assistant","role":"assistant","message":{"role":"assistant","content":"Hi there!"}}

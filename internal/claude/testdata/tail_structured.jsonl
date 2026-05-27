@@ -1,0 +1,2 @@
+{"type":"assistant","role":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hello"},{"type":"text","text":" world"}]}}
+{"type":"user","role":"user","message":{"role":"user","content":[{"type":"text","text":"got it"}]}}

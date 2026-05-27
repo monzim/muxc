@@ -1,0 +1,8 @@
+# Top-level build outputs only — not test-fixture directories like internal/cli/testdata/bin/.
+/bin/
+/dist/
+/coverage/
+*.test
+coverage.out
+.vscode/
+.idea/

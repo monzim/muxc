@@ -1,0 +1,12 @@
+Name:	zsh
+Umask:	0022
+State:	S (sleeping)
+Tgid:	100
+Ngid:	0
+Pid:	100
+PPid:	1
+TracerPid:	0
+Uid:	1000	1000	1000	1000
+Gid:	1000	1000	1000	1000
+VmRSS:	    4096 kB
+VmPeak:	   10240 kB

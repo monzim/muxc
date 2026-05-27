@@ -1,0 +1,7 @@
+this is not json
+also not json
+{"type":"other","foo":"bar"}
+{"type":"other","baz":42}
+{"noNameField":true}
+{"type":"meta","sessionName":"code-review-session"}
+{"type":"user","role":"user","message":{"role":"user","content":"Start"}}

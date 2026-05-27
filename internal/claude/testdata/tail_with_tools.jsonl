@@ -1,0 +1,4 @@
+{"type":"user","role":"user","message":{"role":"user","content":"Run a command"}}
+{"type":"tool_use","role":"assistant","message":{"role":"assistant","content":"calling tool"}}
+{"type":"tool_result","role":"tool","content":"tool output here"}
+{"type":"assistant","role":"assistant","message":{"role":"assistant","content":"Done!"}}

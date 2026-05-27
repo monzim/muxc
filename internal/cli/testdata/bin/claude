@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# fake claude — used exclusively by integration tests.
+#
+# Mimics the subset of claude CLI behaviour that muxc needs:
+#   - Accepts arbitrary flags (--dangerously-skip-permissions, -n <name>, etc.)
+#   - Writes a fake JSONL transcript so ExtractSessionName works.
+#   - Sleeps indefinitely until killed (simulating an interactive session).
+#
+# Transcript location follows Claude Code's convention:
+#   $CLAUDE_CONFIG_DIR/projects/<encoded-cwd>/<uuid>.jsonl
+# where <encoded-cwd> replaces every "/" in $PWD with "-" (leading "-").
+
+set -euo pipefail
+
+# ── Parse -n <session-name> from argv ────────────────────────────────────────
+SESSION_NAME=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -n)
+            SESSION_NAME="${2:-}"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+# ── Determine claude config dir ───────────────────────────────────────────────
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}"
+
+# ── Encode current working directory ─────────────────────────────────────────
+# Replace every "/" with "-"; the result starts with "-".
+ENCODED_CWD="${PWD//\//-}"
+
+# ── Create project directory ──────────────────────────────────────────────────
+PROJECT_DIR="${CLAUDE_DIR}/projects/${ENCODED_CWD}"
+mkdir -p "${PROJECT_DIR}"
+
+# ── Write a fake JSONL transcript ────────────────────────────────────────────
+# Use a stable UUID derived from the session name (or a fixed value).
+UUID="aaaabbbb-cccc-dddd-eeee-ffffffffffff"
+TRANSCRIPT="${PROJECT_DIR}/${UUID}.jsonl"
+
+# Write metadata lines that ExtractSessionName can pick up.
+# Include the "name" field that sessions.go probes first (spec §14.2).
+if [[ -n "${SESSION_NAME}" ]]; then
+    printf '{"type":"summary","name":"%s"}\n' "${SESSION_NAME}" > "${TRANSCRIPT}"
+else
+    printf '{"type":"summary","name":"test-session"}\n' > "${TRANSCRIPT}"
+fi
+
+# Add a few more lines to simulate a real transcript.
+printf '{"type":"user","role":"user","content":"hello"}\n' >> "${TRANSCRIPT}"
+printf '{"type":"assistant","role":"assistant","content":"hi there"}\n' >> "${TRANSCRIPT}"
+
+# Announce startup on the controlling TTY if one is available.
+if [[ -t 1 ]]; then
+    echo "fake claude started"
+fi
+
+# Sleep until killed (SIGHUP from tmux kill-session, SIGTERM, or SIGINT).
+exec sleep infinity

@@ -1,0 +1,5 @@
+{"type":"user","role":"user","message":{"role":"user","content":"Hello world"}}
+{"type":"assistant","role":"assistant","message":{"role":"assistant","content":"Hi there!"}}
+{"type":"user","role":"user","message":{"role":"user","content":"How are you?"}}
+{"type":"assistant","role":"assistant","message":{"role":"assistant","content":"I am doing well, thanks for asking."}}
+{"type":"user","role":"user","message":{"role":"user","content":"Last message"}}
