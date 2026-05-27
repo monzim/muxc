@@ -207,3 +207,75 @@ func TestFilterByGlob_AllMatch(t *testing.T) {
 		t.Errorf("wildcard: expected 3, got %d", len(got))
 	}
 }
+
+// ---- filterByMode tests ----------------------------------------------------
+
+// In each row, IsExternal and ClaudePID are the two fields the filter inspects.
+func modeRow(name string, external bool, claudePID int) SessionRow {
+	return SessionRow{Name: name, IsExternal: external, ClaudePID: claudePID}
+}
+
+func TestFilterByMode_None(t *testing.T) {
+	// ExternalNone: drop every external row regardless of Claude presence.
+	rows := []SessionRow{
+		modeRow("muxc-a", false, 1234), // muxc + claude → keep
+		modeRow("muxc-b", false, 0),    // muxc, no claude → keep
+		modeRow("ext-c", true, 5678),   // external + claude → drop
+		modeRow("ext-d", true, 0),      // external, no claude → drop
+	}
+	got := filterByMode(rows, ExternalNone)
+	if len(got) != 2 {
+		t.Fatalf("ExternalNone: want 2, got %d (%v)", len(got), got)
+	}
+	for _, r := range got {
+		if r.IsExternal {
+			t.Errorf("ExternalNone kept external row %q", r.Name)
+		}
+	}
+}
+
+func TestFilterByMode_WithClaude(t *testing.T) {
+	// ExternalWithClaude: muxc rows kept; external rows kept only when ClaudePID > 0.
+	rows := []SessionRow{
+		modeRow("muxc-a", false, 1234), // keep
+		modeRow("muxc-b", false, 0),    // keep
+		modeRow("ext-c", true, 5678),   // keep
+		modeRow("ext-d", true, 0),      // drop
+	}
+	got := filterByMode(rows, ExternalWithClaude)
+	if len(got) != 3 {
+		t.Fatalf("ExternalWithClaude: want 3, got %d (%v)", len(got), got)
+	}
+	names := map[string]bool{}
+	for _, r := range got {
+		names[r.Name] = true
+	}
+	if !names["muxc-a"] || !names["muxc-b"] || !names["ext-c"] {
+		t.Errorf("ExternalWithClaude: missing expected row in %v", names)
+	}
+	if names["ext-d"] {
+		t.Errorf("ExternalWithClaude: kept claude-less external row")
+	}
+}
+
+func TestFilterByMode_All(t *testing.T) {
+	// ExternalAll: no filtering.
+	rows := []SessionRow{
+		modeRow("muxc-a", false, 0),
+		modeRow("ext-b", true, 0),
+		modeRow("ext-c", true, 1234),
+	}
+	got := filterByMode(rows, ExternalAll)
+	if len(got) != 3 {
+		t.Errorf("ExternalAll: want 3, got %d", len(got))
+	}
+}
+
+func TestFilterByMode_EmptyInput(t *testing.T) {
+	for _, m := range []ExternalMode{ExternalNone, ExternalWithClaude, ExternalAll} {
+		got := filterByMode(nil, m)
+		if len(got) != 0 {
+			t.Errorf("mode %d on nil rows: want 0, got %d", m, len(got))
+		}
+	}
+}

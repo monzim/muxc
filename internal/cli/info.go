@@ -72,8 +72,8 @@ func runInfo(cmd *cobra.Command, args []string) error {
 		return exitErr(2, err.Error())
 	}
 
-	// Gather all sessions and find the one we want.
-	rows, err := Gather(ctx, cfg, st, true /* include external so we can always find it */)
+	// Gather all sessions so info can resolve any visible session name.
+	rows, err := Gather(ctx, cfg, st, ExternalAll)
 	if err != nil {
 		return fmt.Errorf("muxc: info: %w", err)
 	}

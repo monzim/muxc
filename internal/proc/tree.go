@@ -164,6 +164,23 @@ func (t *Tree) Cmdline(pid int) ([]string, error) {
 	return args, nil
 }
 
+// CWD returns the working directory of pid by reading /proc/<pid>/cwd, which
+// is a symlink to the process's cwd. Returns os.ErrNotExist if the process is
+// gone; returns the readlink error (typically permission denied) otherwise.
+// Used to derive a project path for externally-created tmux sessions whose
+// Claude process muxc didn't launch (so state.json has no entry).
+func (t *Tree) CWD(pid int) (string, error) {
+	path := filepath.Join(t.procRoot, strconv.Itoa(pid), "cwd")
+	target, err := os.Readlink(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", os.ErrNotExist
+		}
+		return "", err
+	}
+	return target, nil
+}
+
 // isAllDigits returns true if s is non-empty and consists entirely of ASCII digits.
 func isAllDigits(s string) bool {
 	if len(s) == 0 {

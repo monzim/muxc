@@ -9,8 +9,9 @@ import (
 	"strings"
 )
 
-// IdentifyClaude walks the descendants of rootPID and applies the
-// heuristic from spec §13.3 to find the Claude Code process:
+// IdentifyClaude walks the pane's process subtree (rootPID and its
+// descendants) and applies the heuristic from spec §13.3 to find the
+// Claude Code process:
 //
 //  1. argv[0] basename == "claude"
 //  2. argv[0] basename == "node" AND any argv[i] (i>0) contains "/claude/"
@@ -20,12 +21,19 @@ import (
 //
 // Among all matching PIDs, the lowest PID is returned (closest to pane PID
 // by spawn order — spec §13.3). Returns (0, false) if nothing matches.
+//
+// Note: rootPID itself is considered as a candidate (post-v1.0 extension).
+// Some tmux launch patterns — particularly `tmux new-session -d <cmd>`
+// without a wrapping shell — produce a pane whose root process IS the
+// command. Without including rootPID, those panes would report no Claude
+// process even when the pane's only process is claude.
 func (t *Tree) IdentifyClaude(rootPID int, claudeBin string) (claudePID int, found bool) {
-	candidates := t.Descendants(rootPID)
-
 	if claudeBin == "" {
 		claudeBin = "claude"
 	}
+
+	// Include rootPID itself plus all its descendants in the candidate set.
+	candidates := append([]int{rootPID}, t.Descendants(rootPID)...)
 
 	var best int // 0 means no match yet
 

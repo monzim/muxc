@@ -51,11 +51,35 @@ type SessionRow struct {
 	StateEntry *state.SessionEntry `json:"-"`
 }
 
-// Gather walks tmux + state + procfs + claude projects and returns one
-// SessionRow per live session.
+// ExternalMode controls how Gather treats tmux sessions whose names do NOT
+// start with cfg.Defaults.Prefix (i.e., sessions muxc didn't create).
 //
-// If includeExternal is true, sessions whose names do NOT start with
-// cfg.Defaults.Prefix are included with IsExternal=true.
+// Spec §11.1 originally exposed only a `--all` flag (ExternalAll), but in
+// post-v1.0 muxc surfaces external sessions that are running Claude by default
+// so users can see all their Claude sessions in one place. See CLAUDE.md for
+// the rationale on this divergence.
+type ExternalMode int
+
+const (
+	// ExternalNone returns only muxc-prefixed sessions. Used by `kill --idle`
+	// and `kill --all` so muxc never kills sessions it didn't create.
+	ExternalNone ExternalMode = iota
+	// ExternalWithClaude returns muxc-prefixed sessions plus non-muxc sessions
+	// that have a Claude process detected. This is the default for `ls`, `mem`,
+	// `attach`, and the interactive REPL.
+	ExternalWithClaude
+	// ExternalAll returns every tmux session, including non-muxc ones without
+	// Claude. Triggered by the `--all` flag on `ls` and `mem`.
+	ExternalAll
+)
+
+// Gather walks tmux + state + procfs + claude projects and returns one
+// SessionRow per live session, filtered according to mode.
+//
+// Gather always evaluates every tmux session through the Claude-process
+// detection step (so ClaudePID is known for every row), then drops rows that
+// don't match `mode`. Filtering happens AFTER row enrichment to keep the
+// detection logic in one place.
 //
 // Gather prunes stale state entries (names in state but not in tmux) from the
 // in-memory State. It does NOT persist; the caller decides when to call
@@ -63,25 +87,16 @@ type SessionRow struct {
 //
 // On tmux-not-running (ErrNoServer) ListSessions returns empty slice + nil,
 // so Gather returns an empty slice + nil per spec §12.
-func Gather(ctx context.Context, cfg *config.Config, st *state.State, includeExternal bool) ([]SessionRow, error) {
+func Gather(ctx context.Context, cfg *config.Config, st *state.State, mode ExternalMode) ([]SessionRow, error) {
 	// 1. List live tmux sessions. ErrNoServer → empty list, nil error (spec §12).
 	sessions, err := tmux.ListSessions(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// 2. Filter by prefix unless includeExternal is requested.
 	prefix := cfg.Defaults.Prefix
-	var filtered []tmux.Session
-	for _, s := range sessions {
-		if strings.HasPrefix(s.Name, prefix) {
-			filtered = append(filtered, s)
-		} else if includeExternal {
-			filtered = append(filtered, s)
-		}
-	}
 
-	// 3. Build the process tree ONCE for all sessions (spec §13.1 invariant).
+	// 2. Build the process tree ONCE for all sessions (spec §13.1 invariant).
 	tree, err := proc.BuildTree()
 	if err != nil {
 		// /proc unavailable — log and continue; all RSS values will be 0.
@@ -91,11 +106,13 @@ func Gather(ctx context.Context, cfg *config.Config, st *state.State, includeExt
 
 	now := time.Now()
 
-	// 4. Build one SessionRow per session.
-	rows := make([]SessionRow, 0, len(filtered))
-	liveNames := make([]string, 0, len(filtered))
+	// 3. Build one SessionRow per session. We enrich ALL sessions (including
+	//    external ones) so the Claude-process detection result is available
+	//    when we apply the mode filter in step 4.
+	rows := make([]SessionRow, 0, len(sessions))
+	liveNames := make([]string, 0, len(sessions))
 
-	for _, s := range filtered {
+	for _, s := range sessions {
 		liveNames = append(liveNames, s.Name)
 
 		row := SessionRow{
@@ -110,7 +127,7 @@ func Gather(ctx context.Context, cfg *config.Config, st *state.State, includeExt
 			IsExternal:      !strings.HasPrefix(s.Name, prefix),
 		}
 
-		// 4a. Get the first pane PID.
+		// 3a. Get the first pane PID.
 		panePIDs, err := tmux.ListPanePIDs(ctx, s.Name)
 		if err != nil {
 			slog.Warn("gather: cannot get pane PIDs", "session", s.Name, "err", err)
@@ -118,7 +135,7 @@ func Gather(ctx context.Context, cfg *config.Config, st *state.State, includeExt
 			row.PanePID = panePIDs[0]
 		}
 
-		// 4b. Walk process tree for this session.
+		// 3b. Walk process tree for this session.
 		if tree != nil && row.PanePID > 0 {
 			claudePID, found := tree.IdentifyClaude(row.PanePID, cfg.Defaults.ClaudeBin)
 
@@ -143,7 +160,7 @@ func Gather(ctx context.Context, cfg *config.Config, st *state.State, includeExt
 			}
 		}
 
-		// 4c. Copy project path and Claude session name from state.
+		// 3c. Copy project path and Claude session name from state.
 		if entry, ok := st.Sessions[s.Name]; ok {
 			row.ProjectPath = entry.ProjectPath
 			row.ClaudeSessionName = entry.ClaudeSessionName
@@ -151,7 +168,16 @@ func Gather(ctx context.Context, cfg *config.Config, st *state.State, includeExt
 			row.StateEntry = &entryCopy
 		}
 
-		// 4d. If ShowClaudeID is set and we have a project path, look up the
+		// 3d. For external sessions (no state entry), derive ProjectPath from
+		//     the Claude process's cwd. This lets `info` show a real project
+		//     and lets the claude-session lookup in step 3e populate ClaudeSessionID.
+		if row.ProjectPath == "" && row.ClaudePID > 0 && tree != nil {
+			if cwd, err := tree.CWD(row.ClaudePID); err == nil {
+				row.ProjectPath = cwd
+			}
+		}
+
+		// 3e. If ShowClaudeID is set and we have a project path, look up the
 		//     latest Claude session from ~/.claude/projects/ (spec §11.1 step 3).
 		if cfg.Display.ShowClaudeID && row.ProjectPath != "" {
 			cs, err := claude.LatestSession(cfg.Paths.ClaudeProjects, row.ProjectPath)
@@ -170,10 +196,28 @@ func Gather(ctx context.Context, cfg *config.Config, st *state.State, includeExt
 		rows = append(rows, row)
 	}
 
-	// 5. Prune stale state entries (in-memory only; caller persists if desired).
+	// 4. Prune stale state entries (in-memory only; caller persists if desired).
 	st.Prune(liveNames)
 
-	return rows, nil
+	// 5. Apply the ExternalMode filter now that every row knows its ClaudePID.
+	return filterByMode(rows, mode), nil
+}
+
+// filterByMode drops external rows according to the requested mode.
+func filterByMode(rows []SessionRow, mode ExternalMode) []SessionRow {
+	if mode == ExternalAll {
+		return rows
+	}
+	out := rows[:0]
+	for _, r := range rows {
+		switch {
+		case !r.IsExternal:
+			out = append(out, r)
+		case mode == ExternalWithClaude && r.ClaudePID > 0:
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // SortRows sorts rows in-place by the given key.

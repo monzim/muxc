@@ -47,6 +47,45 @@ muxc kill my-project --yes          # tear it down
 
 ---
 
+## Interactive mode
+
+Run `muxc` with no arguments to enter a numbered menu of available commands.
+Pick a command, follow the prompts, return to the menu, repeat. Type `q`,
+`quit`, `exit`, or press Ctrl-D to leave.
+
+```
+$ muxc
+muxc 1.0.0 — interactive mode (type 'q' to quit)
+
+  1) ls       list sessions
+  2) new      create a session in a project directory
+  3) attach   attach to a session
+  4) kill     kill a session
+  5) mem      memory usage (sorted by RSS)
+  6) info     detailed session info
+  7) doctor   environment health check
+  8) version  print version
+Select (1-8, q): _
+```
+
+`attach` is a one-way trip — detaching from tmux drops you to the shell, not
+back to the muxc menu. Re-launch `muxc` to pick another command.
+
+---
+
+## External Claude sessions
+
+`muxc ls` surfaces tmux sessions you didn't create through `muxc new`, as long
+as they contain a detected Claude process. Those rows are marked with a `*`
+suffix in the table and `"is_external": true` in JSON output. Pure tmux
+sessions without Claude stay hidden unless `--all` is passed.
+
+`muxc kill --all` and `muxc kill --idle` never touch external sessions — they
+operate only on sessions whose names start with the configured prefix
+(default `muxc-`). Kill external sessions with `tmux kill-session -t <name>`.
+
+---
+
 ## Commands
 
 | Command | Description |

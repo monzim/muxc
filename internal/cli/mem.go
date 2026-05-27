@@ -53,7 +53,8 @@ func runMem(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	rows, err := Gather(ctx, cfg, st, false /* muxc sessions only */)
+	// Same default as `ls`: include external Claude sessions.
+	rows, err := Gather(ctx, cfg, st, ExternalWithClaude)
 	if err != nil {
 		return fmt.Errorf("muxc: mem: %w", err)
 	}
@@ -122,7 +123,7 @@ func RenderMemTable(w *os.File, cfg *config.Config, rows []SessionRow, totals me
 			attached = "yes"
 		}
 
-		row := []string{r.Name, project, claudeCol, uptime, idle, mem, attached}
+		row := []string{nameCell(r), project, claudeCol, uptime, idle, mem, attached}
 
 		// Bold the top consumer when color is enabled (spec §11.5).
 		if colorOn && i == 0 {

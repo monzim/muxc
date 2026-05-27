@@ -461,3 +461,48 @@ func itoa(n int) string {
 	}
 	return string(buf[pos:])
 }
+
+// ---- CWD ----------------------------------------------------------------
+
+func TestCWD_ReadsSymlink(t *testing.T) {
+	// Build a synthetic proc root with a single PID whose cwd symlink points
+	// at a known directory. Tests must not assume the real /proc.
+	root := t.TempDir()
+	pidDir := filepath.Join(root, "777")
+	if err := os.MkdirAll(pidDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Create a target dir and symlink "cwd" → target.
+	target := filepath.Join(root, "project")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(pidDir, "cwd")); err != nil {
+		t.Fatal(err)
+	}
+
+	tree := &Tree{procRoot: root}
+	got, err := tree.CWD(777)
+	if err != nil {
+		t.Fatalf("CWD: %v", err)
+	}
+	if got != target {
+		t.Errorf("CWD: got %q, want %q", got, target)
+	}
+}
+
+func TestCWD_MissingPID(t *testing.T) {
+	tree := &Tree{procRoot: t.TempDir()}
+	_, err := tree.CWD(99999)
+	if err == nil {
+		t.Fatal("expected error for missing PID")
+	}
+	if !errorsIs(err, os.ErrNotExist) {
+		t.Errorf("expected os.ErrNotExist, got %v", err)
+	}
+}
+
+// errorsIs is a tiny stdlib-free wrapper to avoid an extra import in this test file.
+func errorsIs(err, target error) bool {
+	return err == target || (err != nil && err.Error() == target.Error())
+}

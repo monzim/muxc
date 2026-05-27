@@ -90,7 +90,8 @@ func runAttach(cmd *cobra.Command, args []string) error {
 	}
 
 	// ── Case B: no argument — list sessions and present picker ───────────────
-	rows, err := Gather(ctx, cfg, st, false /* includeExternal */)
+	// Picker shows muxc-managed sessions plus external sessions running Claude.
+	rows, err := Gather(ctx, cfg, st, ExternalWithClaude)
 	if err != nil {
 		return exitErr(1, fmt.Sprintf("muxc: gather sessions: %s", err))
 	}

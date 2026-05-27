@@ -157,7 +157,8 @@ func runKill(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		rows, gErr := Gather(ctx, cfg, st, false)
+		// ExternalNone: never kill external (non-muxc) sessions via --idle.
+		rows, gErr := Gather(ctx, cfg, st, ExternalNone)
 		if gErr != nil {
 			return fmt.Errorf("muxc: gather sessions: %w", gErr)
 		}

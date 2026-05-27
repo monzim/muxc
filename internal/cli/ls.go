@@ -46,7 +46,13 @@ func runLs(cmd *cobra.Command, _ []string) error {
 	sortKey, _ := cmd.Flags().GetString("sort")
 	filterPat, _ := cmd.Flags().GetString("filter")
 
-	rows, err := Gather(ctx, cfg, st, includeAll)
+	// Default: muxc-managed sessions + external tmux sessions that have a
+	// Claude process detected. --all expands to every tmux session.
+	mode := ExternalWithClaude
+	if includeAll {
+		mode = ExternalAll
+	}
+	rows, err := Gather(ctx, cfg, st, mode)
 	if err != nil {
 		return fmt.Errorf("muxc: ls: %w", err)
 	}
@@ -97,7 +103,7 @@ func RenderLsTable(w *os.File, cfg *config.Config, rows []SessionRow) error {
 			attached = "yes"
 		}
 		tableRows = append(tableRows, []string{
-			r.Name, project, claudeCol, uptime, idle, mem, attached,
+			nameCell(r), project, claudeCol, uptime, idle, mem, attached,
 		})
 	}
 
@@ -146,6 +152,16 @@ func homeRelative(path, home string) string {
 		return "~"
 	}
 	return path
+}
+
+// nameCell formats the NAME column. External (non-muxc) sessions get a "*"
+// suffix so users can spot them in the list at a glance. The JSON output
+// keeps `is_external` as a typed boolean — the marker is for human eyes only.
+func nameCell(r SessionRow) string {
+	if r.IsExternal {
+		return r.Name + "*"
+	}
+	return r.Name
 }
 
 // claudeDisplay returns the CLAUDE column value for a row.

@@ -237,6 +237,18 @@ func makeProjectDir(t *testing.T) string {
 	return dir
 }
 
+// sliceHas reports whether any element of xs equals target. Tiny helper to
+// keep tests dependency-free (we don't pull in slices.Contains because the
+// module target is Go 1.22 and we want the test code to be obvious).
+func sliceHas(xs []string, target string) bool {
+	for _, x := range xs {
+		if x == target {
+			return true
+		}
+	}
+	return false
+}
+
 // writeFakeTranscript writes a minimal fake JSONL transcript for projectPath
 // under claudeDir/projects/<encoded>/. Returns the transcript file path.
 func writeFakeTranscript(t *testing.T, claudeDir, projectPath, sessionName string) string {
@@ -936,5 +948,103 @@ func TestKillAllFlag(t *testing.T) {
 		if strings.HasPrefix(s, "muxc-") {
 			t.Errorf("session %q still exists after kill --all", s)
 		}
+	}
+}
+
+// TestExternalClaudeVisible exercises the post-v1.0 behaviour where
+// `muxc ls` (with no flags) surfaces tmux sessions whose names do NOT
+// start with the muxc prefix but which have a claude process detected.
+// Pure tmux sessions without claude must NOT appear unless `--all` is passed.
+func TestExternalClaudeVisible(t *testing.T) {
+	env := setupTestEnv(t)
+
+	// Spawn one external session running the fake claude binary (visible
+	// in ls by default) and one external pure-shell session (visible only
+	// under --all). The session command is passed as a single string so
+	// tmux runs it via the user's shell, which looks up `claude` on PATH.
+	startExternalSession := func(name, command string) {
+		t.Helper()
+		args := []string{"-L", intSocket, "new-session", "-d", "-s", name, "-c", env.homeDir, command}
+		cmd := exec.Command("tmux", args...)
+		// Provide a controlled env: testDataBin first on PATH so the fake
+		// claude wins, and CLAUDE_CONFIG_DIR/HOME so the script can write
+		// its fake transcript without leaking to the user's $HOME.
+		cmd.Env = []string{
+			"PATH=" + env.testDataBin + string(os.PathListSeparator) + env.origPATH,
+			"HOME=" + env.homeDir,
+			"CLAUDE_CONFIG_DIR=" + env.claudeDir,
+			"TMPDIR=" + os.TempDir(),
+		}
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("tmux new-session %q: %v\n%s", name, err, out)
+		}
+	}
+
+	startExternalSession("manual-claude", "claude --fake")
+	startExternalSession("just-shell", "sleep 60")
+
+	// Give tmux + the spawned shell a beat to fork the claude/sleep children
+	// so /proc shows them when muxc walks the tree.
+	time.Sleep(800 * time.Millisecond)
+
+	// Sanity check: confirm tmux actually has both sessions on the private socket.
+	if got := listTmuxSessions(t); !sliceHas(got, "manual-claude") || !sliceHas(got, "just-shell") {
+		t.Fatalf("expected both external sessions to exist on private tmux; got %v", got)
+	}
+
+	// Default ls: claude-bearing external session present, shell-only hidden.
+	stdoutJSON, _, code := runMuxc(t, env, "ls", "--json")
+	if code != 0 {
+		t.Fatalf("muxc ls --json: exit %d", code)
+	}
+	var rows []map[string]any
+	if err := json.Unmarshal([]byte(stdoutJSON), &rows); err != nil {
+		t.Fatalf("invalid json: %v\n%s", err, stdoutJSON)
+	}
+	names := map[string]bool{}
+	for _, r := range rows {
+		if n, ok := r["name"].(string); ok {
+			names[n] = true
+		}
+	}
+	if !names["manual-claude"] {
+		t.Errorf("default ls missing external claude session; got names=%v", names)
+	}
+	if names["just-shell"] {
+		t.Errorf("default ls leaked claude-less external session %q", "just-shell")
+	}
+
+	// is_external should be true for the visible external row.
+	for _, r := range rows {
+		if r["name"] == "manual-claude" {
+			if got, _ := r["is_external"].(bool); !got {
+				t.Errorf("manual-claude is_external: want true, got %v", r["is_external"])
+			}
+		}
+	}
+
+	// ls --all surfaces every tmux session, including the claude-less one.
+	allJSON, _, code := runMuxc(t, env, "ls", "--all", "--json")
+	if code != 0 {
+		t.Fatalf("muxc ls --all --json: exit %d", code)
+	}
+	var allRows []map[string]any
+	if err := json.Unmarshal([]byte(allJSON), &allRows); err != nil {
+		t.Fatalf("invalid json (--all): %v\n%s", err, allJSON)
+	}
+	allNames := map[string]bool{}
+	for _, r := range allRows {
+		if n, ok := r["name"].(string); ok {
+			allNames[n] = true
+		}
+	}
+	if !allNames["manual-claude"] || !allNames["just-shell"] {
+		t.Errorf("ls --all should include both external sessions; got %v", allNames)
+	}
+
+	// Table mode marks external sessions with a trailing '*'.
+	tableOut, _, _ := runMuxc(t, env, "ls")
+	if !strings.Contains(tableOut, "manual-claude*") {
+		t.Errorf("table mode should mark external session with '*'; got:\n%s", tableOut)
 	}
 }

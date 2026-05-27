@@ -59,5 +59,12 @@ if [[ -t 1 ]]; then
     echo "fake claude started"
 fi
 
-# Sleep until killed (SIGHUP from tmux kill-session, SIGTERM, or SIGINT).
-exec sleep infinity
+# Sleep until killed. We use `exec -a claude sleep infinity` so the resulting
+# process has argv[0] == "claude", which muxc's identification heuristic
+# (internal/proc/claude.go §13.3 rule #1) matches via filepath.Base(argv[0]).
+#
+# Without the explicit argv[0] override, the bash interpreter's own argv[0]
+# would be "bash" (from `#!/usr/bin/env bash` shebang handling), and muxc
+# would not see this fixture as a Claude process — breaking integration
+# tests that rely on Claude detection in external tmux sessions.
+exec -a claude sleep infinity

@@ -82,3 +82,15 @@ Before shipping, all 14 criteria in §24 must pass. The load-bearing ones to kee
 ## When the spec is ambiguous
 
 §25 lists known open questions (color library choice, fzf column format, prompt UI library, path truncation strategy, MCP-name surfacing in `info`). Pick the simpler interpretation, document the choice in a code comment that cites the spec section, and move on — do not block on clarification.
+
+## Post-v1.0 additions (deliberate spec deviations)
+
+These features were added after v1.0.0 shipped and **deliberately deviate from the original spec**. Keep them — they exist by explicit user direction, not by accident. Do not remove them as "scope creep" per §23.
+
+- **External Claude sessions in `muxc ls`** — by default, tmux sessions whose names do *not* start with `cfg.Defaults.Prefix` but which contain a detected Claude process are now listed (marked `is_external=true` and rendered with a trailing `*` in the NAME column). Pure tmux sessions without Claude remain hidden unless `--all` is used. Implemented by the `ExternalMode` enum in `internal/cli/gather.go` (replaces the old `includeExternal bool`). `kill --all` and `kill --idle` still operate only on muxc-prefixed sessions, so external sessions are never killed by accident.
+- **Interactive REPL menu** — invoking `muxc` with no subcommand now drops into a numbered picker (see `internal/cli/interactive.go`). Pick a command, follow per-command prompts (project path for `new`, session picker for `attach`/`info`, mode picker for `kill`), then return to the menu. `q`/`quit`/`exit`/EOF leave the loop. This is a soft TUI — plain text, no ncurses, no ANSI cursor control. Spec §3 rejected a "TUI dashboard" because `watch -n 2 muxc ls` covered the original goal; this menu serves a different goal (command discovery) and stays within the no-daemon constraint.
+- **`IdentifyClaude` includes `rootPID`** — `internal/proc/claude.go:IdentifyClaude` now considers the pane PID itself as a candidate, not just its descendants. This handles tmux sessions launched directly into a command (e.g., `tmux new-session -d <claude-binary>`) where there's no wrapping shell. Spec §13.3 said "walk descendants" — that was an implementation hint, not a hard contract.
+- **`Tree.CWD`** — new helper in `internal/proc/tree.go` reads `/proc/<pid>/cwd` so `Gather` can derive `ProjectPath` for external sessions that aren't in `state.json`.
+- **Default `slog` handler to stderr at WARN level** — installed in `cmd/muxc/main.go:main` so warnings (e.g., corrupt `state.json`) surface by default per spec §17. The default `slog` handler is INFO-to-stderr, which would have been too noisy.
+
+The original spec at `spec.md` is unchanged; it remains the v1.0 contract.

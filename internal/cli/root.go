@@ -51,6 +51,10 @@ func exitErrf(code int, format string, args ...any) *ExitError {
 }
 
 // rootCmd is the base cobra command for the muxc binary.
+//
+// When invoked with no subcommand, RunE drops into runInteractive (post-v1.0
+// extension — see CLAUDE.md "Post-v1.0 additions" and interactive.go). With a
+// subcommand, cobra dispatches normally and the root RunE is skipped.
 var rootCmd = &cobra.Command{
 	Use:   "muxc",
 	Short: "Manage Claude Code sessions inside tmux",
@@ -60,7 +64,11 @@ It lets you list, create, attach to, and kill Claude Code sessions running
 inside tmux, with memory and idle-time information sourced directly from
 /proc and the Claude project directory (~/.claude/projects/).
 
-tmux is the source of truth for liveness. muxc never writes to ~/.claude/.`,
+tmux is the source of truth for liveness. muxc never writes to ~/.claude/.
+
+Run with no subcommand to enter an interactive picker.`,
+	Args:          cobra.NoArgs,
+	RunE:          runInteractive,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 }
