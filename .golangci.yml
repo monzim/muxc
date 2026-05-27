@@ -1,5 +1,11 @@
 run:
   timeout: 5m
+  # Target the Go language version from go.mod's `go` directive, not the
+  # newer `toolchain` directive. Without this pin, golangci-lint (which is
+  # itself built with Go 1.24) refuses to load when it sees toolchain
+  # go1.26.3 in go.mod with: "the Go language version used to build
+  # golangci-lint is lower than the targeted Go version".
+  go: "1.24"
 
 linters:
   enable:

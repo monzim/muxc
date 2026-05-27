@@ -62,6 +62,22 @@ func TestEncodeProjectPath(t *testing.T) {
 
 func TestLatestSession_ReturnsLatest(t *testing.T) {
 	projectsRoot := filepath.Join("testdata", "projects")
+	projDir := filepath.Join(projectsRoot, "-home-user-proj")
+
+	// Git doesn't preserve mtimes — on a fresh checkout (CI) all testdata
+	// files share the same timestamp, so LatestSession's "most recent" pick
+	// is arbitrary. Stamp them explicitly so the assertion is robust.
+	mtimes := map[string]time.Time{
+		"session-aaaa1111.jsonl": time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		"session-bbbb2222.jsonl": time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+		"session-cccc3333.jsonl": time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+	}
+	for name, mtime := range mtimes {
+		if err := os.Chtimes(filepath.Join(projDir, name), mtime, mtime); err != nil {
+			t.Fatalf("set mtime for %s: %v", name, err)
+		}
+	}
+
 	session, err := LatestSession(projectsRoot, "/home/user/proj")
 	if err != nil {
 		t.Fatalf("LatestSession: %v", err)
