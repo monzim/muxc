@@ -8,14 +8,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/monzim/muxc/internal/doctor"
 	"github.com/monzim/muxc/internal/state"
 	"github.com/monzim/muxc/internal/tmux"
 )
 
-// ── checkClaudeBinary ─────────────────────────────────────────────────────
+// ── doctor.CheckClaudeBinary ─────────────────────────────────────────────────────
 
 func TestCheckClaudeBinary_Missing(t *testing.T) {
-	result := checkClaudeBinary("__definitely_not_a_real_binary_xyz__")
+	result := doctor.CheckClaudeBinary("__definitely_not_a_real_binary_xyz__")
 	if result.Status != StatusFail {
 		t.Errorf("expected FAIL for missing binary, got %s", result.Status)
 	}
@@ -26,7 +27,7 @@ func TestCheckClaudeBinary_Missing(t *testing.T) {
 
 func TestCheckClaudeBinary_Exists(t *testing.T) {
 	// "true" is available on every POSIX system and is guaranteed to be in PATH.
-	result := checkClaudeBinary("true")
+	result := doctor.CheckClaudeBinary("true")
 	if result.Status != StatusOK {
 		t.Errorf("expected OK for 'true' binary, got %s: %s", result.Status, result.Message)
 	}
@@ -43,24 +44,24 @@ func TestCheckClaudeBinary_ExistsByPath(t *testing.T) {
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", dir+":"+origPath)
 
-	result := checkClaudeBinary("fake-claude")
+	result := doctor.CheckClaudeBinary("fake-claude")
 	if result.Status != StatusOK {
 		t.Errorf("expected OK for fake binary in PATH, got %s: %s", result.Status, result.Message)
 	}
 }
 
-// ── checkClaudeProjects ───────────────────────────────────────────────────
+// ── doctor.CheckClaudeProjects ───────────────────────────────────────────────────
 
 func TestCheckClaudeProjects_ExistingDir(t *testing.T) {
 	dir := t.TempDir()
-	result := checkClaudeProjects(dir)
+	result := doctor.CheckClaudeProjects(dir)
 	if result.Status != StatusOK {
 		t.Errorf("expected OK for existing dir, got %s: %s", result.Status, result.Message)
 	}
 }
 
 func TestCheckClaudeProjects_NonExistent(t *testing.T) {
-	result := checkClaudeProjects("/tmp/__muxc_does_not_exist_xyz__")
+	result := doctor.CheckClaudeProjects("/tmp/__muxc_does_not_exist_xyz__")
 	if result.Status != StatusWarn {
 		t.Errorf("expected WARN for non-existent dir, got %s", result.Status)
 	}
@@ -76,17 +77,17 @@ func TestCheckClaudeProjects_WithFakeStructure(t *testing.T) {
 	if err := os.MkdirAll(projDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	result := checkClaudeProjects(dir)
+	result := doctor.CheckClaudeProjects(dir)
 	if result.Status != StatusOK {
 		t.Errorf("expected OK for fake structure, got %s: %s", result.Status, result.Message)
 	}
 }
 
-// ── checkConfigDir ────────────────────────────────────────────────────────
+// ── doctor.CheckConfigDir ────────────────────────────────────────────────────────
 
 func TestCheckConfigDir_ExistingWritableDir(t *testing.T) {
 	dir := t.TempDir()
-	result := checkConfigDir(dir)
+	result := doctor.CheckConfigDir(dir)
 	if result.Status != StatusOK {
 		t.Errorf("expected OK for writable dir, got %s: %s", result.Status, result.Message)
 	}
@@ -95,7 +96,7 @@ func TestCheckConfigDir_ExistingWritableDir(t *testing.T) {
 func TestCheckConfigDir_NonExistentCreatable(t *testing.T) {
 	parent := t.TempDir()
 	dir := filepath.Join(parent, "muxc-new")
-	result := checkConfigDir(dir)
+	result := doctor.CheckConfigDir(dir)
 	if result.Status != StatusOK {
 		t.Errorf("expected OK after creating dir, got %s: %s", result.Status, result.Message)
 	}
@@ -113,7 +114,7 @@ func TestCheckConfigDir_ReadOnlyParent(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
 
 	dir := filepath.Join(parent, "sub", "muxc")
-	result := checkConfigDir(dir)
+	result := doctor.CheckConfigDir(dir)
 	if result.Status != StatusFail {
 		// On some systems (e.g. running as root) this may succeed.
 		if os.Getuid() == 0 {
@@ -123,12 +124,12 @@ func TestCheckConfigDir_ReadOnlyParent(t *testing.T) {
 	}
 }
 
-// ── checkConfigToml ───────────────────────────────────────────────────────
+// ── doctor.CheckConfigToml ───────────────────────────────────────────────────────
 
 func TestCheckConfigToml_Absent(t *testing.T) {
 	// An empty temp dir (no config.toml) is fine — defaults apply.
 	dir := t.TempDir()
-	result := checkConfigToml(dir)
+	result := doctor.CheckConfigToml(dir)
 	if result.Status != StatusOK {
 		t.Errorf("expected OK when config.toml is absent, got %s: %s", result.Status, result.Message)
 	}
@@ -141,7 +142,7 @@ func TestCheckConfigToml_ValidFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	result := checkConfigToml(dir)
+	result := doctor.CheckConfigToml(dir)
 	if result.Status != StatusOK {
 		t.Errorf("expected OK for valid config.toml, got %s: %s", result.Status, result.Message)
 	}
@@ -152,16 +153,16 @@ func TestCheckConfigToml_InvalidToml(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("{not toml"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	result := checkConfigToml(dir)
+	result := doctor.CheckConfigToml(dir)
 	if result.Status != StatusFail {
 		t.Errorf("expected FAIL for invalid TOML, got %s", result.Status)
 	}
 }
 
-// ── checkStateJSON ────────────────────────────────────────────────────────
+// ── doctor.CheckStateJSON ────────────────────────────────────────────────────────
 
 func TestCheckStateJSON_Absent(t *testing.T) {
-	result := checkStateJSON("/tmp/__muxc_no_state_xyz__.json")
+	result := doctor.CheckStateJSON("/tmp/__muxc_no_state_xyz__.json")
 	if result.Status != StatusOK {
 		t.Errorf("expected OK for absent state file, got %s", result.Status)
 	}
@@ -174,7 +175,7 @@ func TestCheckStateJSON_ValidFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	result := checkStateJSON(path)
+	result := doctor.CheckStateJSON(path)
 	if result.Status != StatusOK {
 		t.Errorf("expected OK for valid state file, got %s: %s", result.Status, result.Message)
 	}
@@ -186,7 +187,7 @@ func TestCheckStateJSON_CorruptFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{bad json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	result := checkStateJSON(path)
+	result := doctor.CheckStateJSON(path)
 	if result.Status != StatusFail {
 		t.Errorf("expected FAIL for corrupt state file, got %s", result.Status)
 	}
@@ -195,7 +196,7 @@ func TestCheckStateJSON_CorruptFile(t *testing.T) {
 	}
 }
 
-// ── checkOrphanEntries ────────────────────────────────────────────────────
+// ── doctor.CheckOrphanEntries ────────────────────────────────────────────────────
 
 // fakeSessionLister implements doctorSessionLister.
 type fakeSessionLister struct {
@@ -209,11 +210,11 @@ func (f fakeSessionLister) ListSessions(_ context.Context) ([]tmux.Session, erro
 
 func TestCheckOrphanEntries_EmptyState(t *testing.T) {
 	st := &state.State{Version: 1, Sessions: map[string]state.SessionEntry{}}
-	orig := doctorTmuxSessLister
-	doctorTmuxSessLister = fakeSessionLister{}
-	defer func() { doctorTmuxSessLister = orig }()
+	orig := doctor.SessionsLister
+	doctor.SessionsLister = fakeSessionLister{}
+	defer func() { doctor.SessionsLister = orig }()
 
-	result := checkOrphanEntries(context.Background(), st)
+	result := doctor.CheckOrphanEntries(context.Background(), st)
 	if result.Status != StatusOK {
 		t.Errorf("expected OK for empty state, got %s: %s", result.Status, result.Message)
 	}
@@ -227,16 +228,16 @@ func TestCheckOrphanEntries_AllLive(t *testing.T) {
 			"muxc-b": {ProjectPath: "/proj/b"},
 		},
 	}
-	orig := doctorTmuxSessLister
-	doctorTmuxSessLister = fakeSessionLister{
+	orig := doctor.SessionsLister
+	doctor.SessionsLister = fakeSessionLister{
 		sessions: []tmux.Session{
 			{Name: "muxc-a"},
 			{Name: "muxc-b"},
 		},
 	}
-	defer func() { doctorTmuxSessLister = orig }()
+	defer func() { doctor.SessionsLister = orig }()
 
-	result := checkOrphanEntries(context.Background(), st)
+	result := doctor.CheckOrphanEntries(context.Background(), st)
 	if result.Status != StatusOK {
 		t.Errorf("expected OK when all entries have live sessions, got %s: %s", result.Status, result.Message)
 	}
@@ -251,16 +252,16 @@ func TestCheckOrphanEntries_HasOrphans(t *testing.T) {
 			"muxc-c": {ProjectPath: "/proj/c"}, // orphan
 		},
 	}
-	orig := doctorTmuxSessLister
-	doctorTmuxSessLister = fakeSessionLister{
+	orig := doctor.SessionsLister
+	doctor.SessionsLister = fakeSessionLister{
 		sessions: []tmux.Session{
 			{Name: "muxc-a"},
 			{Name: "muxc-b"},
 		},
 	}
-	defer func() { doctorTmuxSessLister = orig }()
+	defer func() { doctor.SessionsLister = orig }()
 
-	result := checkOrphanEntries(context.Background(), st)
+	result := doctor.CheckOrphanEntries(context.Background(), st)
 	if result.Status != StatusWarn {
 		t.Errorf("expected WARN for orphan entry, got %s", result.Status)
 	}
@@ -276,11 +277,11 @@ func TestCheckOrphanEntries_ListSessionsError(t *testing.T) {
 			"muxc-x": {ProjectPath: "/proj/x"},
 		},
 	}
-	orig := doctorTmuxSessLister
-	doctorTmuxSessLister = fakeSessionLister{err: errors.New("tmux not running")}
-	defer func() { doctorTmuxSessLister = orig }()
+	orig := doctor.SessionsLister
+	doctor.SessionsLister = fakeSessionLister{err: errors.New("tmux not running")}
+	defer func() { doctor.SessionsLister = orig }()
 
-	result := checkOrphanEntries(context.Background(), st)
+	result := doctor.CheckOrphanEntries(context.Background(), st)
 	// When listing fails we return WARN (cannot determine), not FAIL.
 	if result.Status != StatusWarn {
 		t.Errorf("expected WARN when session listing fails, got %s", result.Status)
@@ -392,7 +393,7 @@ func TestRenderCheckText_OneLinePerCheck(t *testing.T) {
 	}
 }
 
-// ── checkTmuxVersion (with fake versioner) ────────────────────────────────
+// ── doctor.CheckTmuxVersion (with fake versioner) ────────────────────────────────
 
 type fakeTmuxVersioner struct {
 	version string
@@ -404,22 +405,22 @@ func (f fakeTmuxVersioner) TmuxVersion(_ context.Context) (string, error) {
 }
 
 func TestCheckTmuxVersion_ErrorReturnsFail(t *testing.T) {
-	orig := doctorTmuxVersioner
-	doctorTmuxVersioner = fakeTmuxVersioner{err: errors.New("not found")}
-	defer func() { doctorTmuxVersioner = orig }()
+	orig := doctor.TmuxVersioner
+	doctor.TmuxVersioner = fakeTmuxVersioner{err: errors.New("not found")}
+	defer func() { doctor.TmuxVersioner = orig }()
 
-	result := checkTmuxVersion(context.Background())
+	result := doctor.CheckTmuxVersion(context.Background())
 	if result.Status != StatusFail {
 		t.Errorf("expected FAIL when tmux errors, got %s", result.Status)
 	}
 }
 
 func TestCheckTmuxVersion_OldVersionFails(t *testing.T) {
-	orig := doctorTmuxVersioner
-	doctorTmuxVersioner = fakeTmuxVersioner{version: "2.9"}
-	defer func() { doctorTmuxVersioner = orig }()
+	orig := doctor.TmuxVersioner
+	doctor.TmuxVersioner = fakeTmuxVersioner{version: "2.9"}
+	defer func() { doctor.TmuxVersioner = orig }()
 
-	result := checkTmuxVersion(context.Background())
+	result := doctor.CheckTmuxVersion(context.Background())
 	if result.Status != StatusFail {
 		t.Errorf("expected FAIL for tmux 2.9, got %s", result.Status)
 	}
@@ -429,11 +430,11 @@ func TestCheckTmuxVersion_OldVersionFails(t *testing.T) {
 }
 
 func TestCheckTmuxVersion_GoodVersionOK(t *testing.T) {
-	orig := doctorTmuxVersioner
-	doctorTmuxVersioner = fakeTmuxVersioner{version: "3.4"}
-	defer func() { doctorTmuxVersioner = orig }()
+	orig := doctor.TmuxVersioner
+	doctor.TmuxVersioner = fakeTmuxVersioner{version: "3.4"}
+	defer func() { doctor.TmuxVersioner = orig }()
 
-	result := checkTmuxVersion(context.Background())
+	result := doctor.CheckTmuxVersion(context.Background())
 	if result.Status != StatusOK {
 		t.Errorf("expected OK for tmux 3.4, got %s: %s", result.Status, result.Message)
 	}
@@ -443,63 +444,63 @@ func TestCheckTmuxVersion_GoodVersionOK(t *testing.T) {
 }
 
 func TestCheckTmuxVersion_ExactMinimumOK(t *testing.T) {
-	orig := doctorTmuxVersioner
-	doctorTmuxVersioner = fakeTmuxVersioner{version: "3.0"}
-	defer func() { doctorTmuxVersioner = orig }()
+	orig := doctor.TmuxVersioner
+	doctor.TmuxVersioner = fakeTmuxVersioner{version: "3.0"}
+	defer func() { doctor.TmuxVersioner = orig }()
 
-	result := checkTmuxVersion(context.Background())
+	result := doctor.CheckTmuxVersion(context.Background())
 	if result.Status != StatusOK {
 		t.Errorf("expected OK for exactly tmux 3.0, got %s: %s", result.Status, result.Message)
 	}
 }
 
-// ── checkFzf ──────────────────────────────────────────────────────────────
+// ── doctor.CheckFzf ──────────────────────────────────────────────────────────────
 
 func TestCheckFzf_Missing(t *testing.T) {
 	// Temporarily override PATH so fzf is not found.
 	t.Setenv("PATH", "/dev/null")
-	result := checkFzf()
+	result := doctor.CheckFzf()
 	if result.Status != StatusWarn {
 		t.Errorf("expected WARN when fzf is not on PATH, got %s", result.Status)
 	}
 }
 
-// ── checkUID ──────────────────────────────────────────────────────────────
+// ── doctor.CheckUID ──────────────────────────────────────────────────────────────
 
 func TestCheckUID_NonRoot(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("cannot test non-root check when running as root")
 	}
-	result := checkUID()
+	result := doctor.CheckUID()
 	if result.Status != StatusOK {
 		t.Errorf("expected OK for non-root user, got %s: %s", result.Status, result.Message)
 	}
 }
 
-// ── checkProcfs ───────────────────────────────────────────────────────────
+// ── doctor.CheckProcfs ───────────────────────────────────────────────────────────
 
 func TestCheckProcfs_Linux(t *testing.T) {
 	// Skip on non-Linux; the check itself handles that case.
-	result := checkProcfs()
+	result := doctor.CheckProcfs()
 	// On the CI host (Linux), /proc is always available → OK.
 	// On macOS/Windows it would be WARN. Either is valid; just ensure no panic.
 	if result.Status == "" {
-		t.Error("checkProcfs returned empty status")
+		t.Error("doctor.CheckProcfs returned empty status")
 	}
 }
 
 // ── Optional: real tmux check (skip if tmux not installed) ────────────────
 
 func TestCheckTmuxVersion_Real(t *testing.T) {
-	// Use the real versioner (don't override doctorTmuxVersioner).
+	// Use the real versioner (don't override doctor.TmuxVersioner).
 	// Skip if tmux is not installed.
 	ctx := context.Background()
-	result := checkTmuxVersion(ctx)
+	result := doctor.CheckTmuxVersion(ctx)
 	if result.Status == StatusFail && strings.Contains(result.Message, "not found") {
 		t.Skip("tmux not installed, skipping real version check")
 	}
 	// Either OK or FAIL (old version) — both are valid outcomes. Just ensure no panic.
 	if result.Name == "" {
-		t.Error("checkTmuxVersion returned empty Name")
+		t.Error("doctor.CheckTmuxVersion returned empty Name")
 	}
 }

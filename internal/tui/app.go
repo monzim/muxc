@@ -29,12 +29,17 @@ type App struct {
 	sessions   sessionsModel
 	newForm    newFormModel
 	killPicker killpickerModel
+	doctor     doctorModel
+	info       infoModel
 }
 
 // NewApp constructs the initial root model.
 func NewApp(cfg *config.Config, st *state.State) App {
 	styles := DefaultStyles()
 	keys := DefaultKeyMap()
+	// Best-effort config dir derivation for the doctor screen — empty string
+	// means doctor will use the default ~/.config/muxc/ path.
+	configDir := ""
 	return App{
 		screen:     screenSessions,
 		cfg:        cfg,
@@ -45,6 +50,8 @@ func NewApp(cfg *config.Config, st *state.State) App {
 		sessions:   newSessionsModel(cfg, st, styles, keys),
 		newForm:    newNewFormModel(cfg, st, styles, keys),
 		killPicker: newKillpickerModel(cfg, st, styles, keys),
+		doctor:     newDoctorModel(cfg, st, configDir, styles, keys),
+		info:       newInfoModel(cfg, styles, keys),
 	}
 }
 
@@ -135,6 +142,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					name := a.sessions.rows[a.sessions.cursor].Name
 					return a, func() tea.Msg { return attachRequestMsg{name: name} }
 				}
+			case keyHit(msg, a.keys.Info), keyHit(msg, a.keys.Enter):
+				if a.sessions.cursor >= 0 && a.sessions.cursor < len(a.sessions.rows) {
+					a.info.setRow(a.sessions.rows[a.sessions.cursor])
+					a.screen = screenInfo
+					return a, a.info.Init()
+				}
+			case keyHit(msg, a.keys.Doctor):
+				a.screen = screenDoctor
+				return a, a.doctor.Init()
 			}
 		}
 
@@ -156,6 +172,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		next, cmd := a.killPicker.Update(msg)
 		a.killPicker = next
 		return a, cmd
+	case screenDoctor:
+		next, cmd := a.doctor.Update(msg)
+		a.doctor = next
+		return a, cmd
+	case screenInfo:
+		next, cmd := a.info.Update(msg)
+		a.info = next
+		return a, cmd
 	}
 	return a, nil
 }
@@ -170,6 +194,10 @@ func (a App) View() string {
 		body = a.newForm.View()
 	case screenKillPicker:
 		body = a.killPicker.View()
+	case screenDoctor:
+		body = a.doctor.View()
+	case screenInfo:
+		body = a.info.View()
 	default:
 		body = a.styles.Muted.Render("(unknown screen)")
 	}
