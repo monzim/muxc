@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or discussion
+    url: https://github.com/monzim/muxc/discussions
+    about: For usage questions, ideas, or anything that isn't a bug or feature request, please open a Discussion.
+  - name: Security vulnerability
+    url: https://github.com/monzim/muxc/security/policy
+    about: Do not file public issues for security vulnerabilities. See SECURITY.md for the private disclosure process.

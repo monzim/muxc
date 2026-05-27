@@ -4,5 +4,14 @@
 /coverage/
 *.test
 coverage.out
+
+# Local goreleaser artifacts when running `goreleaser release --snapshot` outside dist/.
+/muxc_*.tar.gz
+/muxc_*.deb
+/muxc_*.rpm
+/muxc_*_checksums.txt
+
+# Editor / OS noise
 .vscode/
 .idea/
+.DS_Store

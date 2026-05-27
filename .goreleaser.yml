@@ -10,8 +10,12 @@ builds:
   - id: muxc
     main: ./cmd/muxc
     binary: muxc
+    # darwin is included so the Homebrew tap formula works on macOS. The
+    # spec is Linux-only, but the binary compiles cleanly on darwin — memory
+    # readings are simply absent (gated on sysinfo.OnLinux()) per the README.
     goos:
       - linux
+      - darwin
     goarch:
       - amd64
       - arm64
@@ -34,6 +38,58 @@ archives:
     files:
       - LICENSE
       - README.md
+      - CHANGELOG.md
+      - docs/MANUAL.md
+
+# Linux distribution packages. nfpms ignores non-Linux builds automatically,
+# so the darwin binaries above are not packaged here.
+nfpms:
+  - id: muxc
+    package_name: muxc
+    file_name_template: "muxc_{{.Version}}_{{.Os}}_{{.Arch}}"
+    builds:
+      - muxc
+    vendor: "Azraf Al Monzim"
+    homepage: "https://github.com/monzim/muxc"
+    maintainer: "Azraf Al Monzim <azrafalmonzim@gmail.com>"
+    description: |
+      Manage Claude Code sessions running inside tmux: list, create,
+      attach, and kill sessions with memory and idle accounting.
+    license: "MIT"
+    formats:
+      - deb
+      - rpm
+    dependencies:
+      - tmux
+    bindir: /usr/local/bin
+
+# Homebrew tap formula. Requires:
+#   1. The repository monzim/homebrew-tap to exist (create it as an empty
+#      public repo before pushing the first tag).
+#   2. The secret HOMEBREW_TAP_GITHUB_TOKEN in monzim/muxc — a fine-grained
+#      PAT with `Contents: Read & Write` on monzim/homebrew-tap.
+brews:
+  - name: muxc
+    ids:
+      - muxc
+    repository:
+      owner: monzim
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: muxc-release-bot
+      email: azrafalmonzim@gmail.com
+    commit_msg_template: "brew: bump {{ .ProjectName }} to {{ .Tag }}"
+    homepage: "https://github.com/monzim/muxc"
+    description: "Manage Claude Code sessions running inside tmux."
+    license: "MIT"
+    dependencies:
+      - name: tmux
+    install: |
+      bin.install "muxc"
+    test: |
+      system "#{bin}/muxc", "version"
 
 checksum:
   name_template: "muxc_{{.Version}}_checksums.txt"

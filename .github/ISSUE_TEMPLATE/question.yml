@@ -1,0 +1,36 @@
+name: Question
+description: Ask a usage question. Prefer Discussions for open-ended chat.
+title: "[q] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Open-ended discussion is best on
+        [GitHub Discussions](https://github.com/monzim/muxc/discussions).
+        Use this template if you've already searched the README, `docs/MANUAL.md`,
+        and `spec.md` and still need a direct answer.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you've already tried
+      description: Commands run, config tweaks, doc sections read.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Relevant environment
+      description: Output of `muxc version` and `muxc doctor` if applicable.
+      render: shell
+    validations:
+      required: false

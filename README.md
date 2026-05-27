@@ -1,5 +1,12 @@
 # muxc
 
+[![CI](https://github.com/monzim/muxc/actions/workflows/ci.yml/badge.svg)](https://github.com/monzim/muxc/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/monzim/muxc?logo=github)](https://github.com/monzim/muxc/releases/latest)
+[![Go Reference](https://pkg.go.dev/badge/github.com/monzim/muxc.svg)](https://pkg.go.dev/github.com/monzim/muxc)
+[![Go Report Card](https://goreportcard.com/badge/github.com/monzim/muxc)](https://goreportcard.com/report/github.com/monzim/muxc)
+[![Go version](https://img.shields.io/github/go-mod/go-version/monzim/muxc)](go.mod)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Manage Claude Code sessions running inside tmux.
 
 `muxc` is a single static Go binary that lists, creates, attaches to, and kills
@@ -11,6 +18,36 @@ every invocation — no daemon, no background process, no API calls.
 ---
 
 ## Install
+
+> Requires `tmux ≥ 3.0`. Linux for full memory accounting; macOS works for
+> session management (memory columns are empty). See
+> [`docs/MANUAL.md`](docs/MANUAL.md#installation) for the full installation guide.
+
+**Download a release binary (recommended)**
+
+```bash
+VERSION=1.0.0
+ARCH=amd64   # or arm64
+curl -fL -o muxc.tar.gz \
+  "https://github.com/monzim/muxc/releases/download/v${VERSION}/muxc_${VERSION}_linux_${ARCH}.tar.gz"
+curl -fL "https://github.com/monzim/muxc/releases/download/v${VERSION}/muxc_${VERSION}_checksums.txt" \
+  | grep "muxc_${VERSION}_linux_${ARCH}.tar.gz" | sha256sum --check
+tar -xzf muxc.tar.gz muxc
+install -m 0755 muxc ~/.local/bin/muxc
+```
+
+**Distribution packages** (Debian/Ubuntu and Fedora/RHEL)
+
+```bash
+sudo dpkg -i muxc_1.0.0_linux_amd64.deb       # or
+sudo rpm  -i muxc_1.0.0_linux_amd64.rpm
+```
+
+**Homebrew (macOS / Linuxbrew)**
+
+```bash
+brew install monzim/tap/muxc
+```
 
 **Via `go install`**
 
@@ -27,11 +64,24 @@ make build
 make install        # copies bin/muxc to ~/.local/bin/muxc
 ```
 
-**Copy from a release archive** (single static binary, no runtime deps beyond tmux)
+**Copy a static binary onto a remote box** (single binary, no runtime deps beyond tmux)
 
 ```
 scp muxc remote:~/.local/bin/
 ```
+
+---
+
+## Documentation
+
+- [`docs/MANUAL.md`](docs/MANUAL.md) — full user manual: every command, flag,
+  config key, exit code, JSON schema, and troubleshooting guide.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to set up a dev environment,
+  the test loop, and how to submit a PR.
+- [`spec.md`](spec.md) — the implementation-ready design spec; cite sections
+  in code comments and PR descriptions.
+- [`CHANGELOG.md`](CHANGELOG.md) — release history.
+- [`SECURITY.md`](SECURITY.md) — security policy and private disclosure.
 
 ---
 
