@@ -9,10 +9,9 @@ import (
 	"github.com/monzim/muxc/internal/state"
 )
 
-// App is the root tea.Model. Wave 3 will fan this out into per-screen models;
-// Wave 2 wires the title bar, help footer, and the global keymap so we can
-// verify the TUI launches, intercepts q/ctrl+c cleanly, and restores the
-// terminal on exit.
+// App is the root tea.Model. It owns shared state (config, terminal size,
+// attach handoff target) and dispatches messages to the currently-focused
+// screen's model.
 type App struct {
 	screen       screenID
 	cfg          *config.Config
@@ -24,17 +23,23 @@ type App struct {
 	help         help.Model
 	showHelp     bool
 	attachTarget string // non-empty if user picked attach; tui.Run reads after program.Run()
+
+	// Per-screen models.
+	sessions sessionsModel
 }
 
 // NewApp constructs the initial root model.
 func NewApp(cfg *config.Config, st *state.State) App {
+	styles := DefaultStyles()
+	keys := DefaultKeyMap()
 	return App{
-		screen: screenSessions,
-		cfg:    cfg,
-		st:     st,
-		styles: DefaultStyles(),
-		keys:   DefaultKeyMap(),
-		help:   newHelp(),
+		screen:   screenSessions,
+		cfg:      cfg,
+		st:       st,
+		styles:   styles,
+		keys:     keys,
+		help:     newHelp(),
+		sessions: newSessionsModel(cfg, st, styles, keys),
 	}
 }
 
@@ -43,38 +48,58 @@ func NewApp(cfg *config.Config, st *state.State) App {
 // post-Quit syscall.Exec into tmux.
 func (a App) AttachTarget() string { return a.attachTarget }
 
+// Init dispatches to the active screen's Init.
 func (a App) Init() tea.Cmd {
-	// Wave 3 returns sessions.Init() here.
-	return nil
+	return a.sessions.Init()
 }
 
+// Update handles global keys and resize, then forwards to the active screen.
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
 		a.help.Width = msg.Width
+		a.sessions.width = msg.Width
+		a.sessions.height = msg.Height
 		return a, nil
 
 	case tea.KeyMsg:
+		// Global keys first.
 		switch {
 		case keyHit(msg, a.keys.Quit):
 			return a, tea.Quit
 		case keyHit(msg, a.keys.Help):
 			a.showHelp = !a.showHelp
 			a.help.ShowAll = a.showHelp
+			a.sessions.help.ShowAll = a.showHelp
 			return a, nil
 		}
+	}
+
+	// Forward to active screen.
+	switch a.screen {
+	case screenSessions:
+		next, cmd := a.sessions.Update(msg)
+		a.sessions = next
+		return a, cmd
 	}
 	return a, nil
 }
 
+// View renders the active screen and a global help overlay if enabled.
 func (a App) View() string {
-	header := a.styles.Title.Render("muxc") + a.styles.Subtitle.Render("  ·  sessions")
-	body := a.styles.Frame.Render(
-		"Wave 2 skeleton — full sessions screen lands in Wave 3.\n\n" +
-			"Press '?' for help, 'q' to quit.",
-	)
-	footer := a.styles.Help.Render(a.help.View(a.keys))
-	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
+	var body string
+	switch a.screen {
+	case screenSessions:
+		body = a.sessions.View()
+	default:
+		body = a.styles.Muted.Render("(unknown screen)")
+	}
+
+	if a.showHelp {
+		overlay := a.styles.Frame.Render(a.help.View(a.keys))
+		body = lipgloss.JoinVertical(lipgloss.Left, body, overlay)
+	}
+	return body
 }

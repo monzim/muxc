@@ -1,4 +1,4 @@
-package cli
+package session
 
 import (
 	"testing"
@@ -7,8 +7,8 @@ import (
 
 // ---- SortRows tests --------------------------------------------------------
 
-func makeRow(name string, rss uint64, idle int64, created time.Time) SessionRow {
-	return SessionRow{
+func makeRow(name string, rss uint64, idle int64, created time.Time) Row {
+	return Row{
 		Name:                 name,
 		RSSPlusChildrenBytes: rss,
 		IdleSeconds:          idle,
@@ -17,7 +17,7 @@ func makeRow(name string, rss uint64, idle int64, created time.Time) SessionRow 
 }
 
 func TestSortRows_Name(t *testing.T) {
-	rows := []SessionRow{
+	rows := []Row{
 		makeRow("muxc-z", 100, 10, time.Now()),
 		makeRow("muxc-a", 200, 20, time.Now()),
 		makeRow("muxc-m", 300, 30, time.Now()),
@@ -35,7 +35,7 @@ func TestSortRows_Name(t *testing.T) {
 
 func TestSortRows_NameDefault(t *testing.T) {
 	// Unknown key should fall back to name sort.
-	rows := []SessionRow{
+	rows := []Row{
 		makeRow("gamma", 0, 0, time.Now()),
 		makeRow("alpha", 0, 0, time.Now()),
 		makeRow("beta", 0, 0, time.Now()),
@@ -52,7 +52,7 @@ func TestSortRows_NameDefault(t *testing.T) {
 }
 
 func TestSortRows_Mem(t *testing.T) {
-	rows := []SessionRow{
+	rows := []Row{
 		makeRow("small", 1024, 0, time.Now()),
 		makeRow("large", 1<<30, 0, time.Now()),
 		makeRow("medium", 1<<20, 0, time.Now()),
@@ -70,7 +70,7 @@ func TestSortRows_Mem(t *testing.T) {
 }
 
 func TestSortRows_Idle(t *testing.T) {
-	rows := []SessionRow{
+	rows := []Row{
 		makeRow("active", 0, 60, time.Now()),
 		makeRow("idle", 0, 7200, time.Now()),
 		makeRow("medium", 0, 300, time.Now()),
@@ -89,7 +89,7 @@ func TestSortRows_Idle(t *testing.T) {
 
 func TestSortRows_Created(t *testing.T) {
 	now := time.Now()
-	rows := []SessionRow{
+	rows := []Row{
 		makeRow("newest", 0, 0, now),
 		makeRow("oldest", 0, 0, now.Add(-24*time.Hour)),
 		makeRow("middle", 0, 0, now.Add(-12*time.Hour)),
@@ -108,7 +108,7 @@ func TestSortRows_Created(t *testing.T) {
 
 func TestSortRows_Empty(t *testing.T) {
 	// Should not panic on empty slice.
-	var rows []SessionRow
+	var rows []Row
 	SortRows(rows, "name")
 	SortRows(rows, "mem")
 	SortRows(rows, "idle")
@@ -116,7 +116,7 @@ func TestSortRows_Empty(t *testing.T) {
 }
 
 func TestSortRows_SingleRow(t *testing.T) {
-	rows := []SessionRow{makeRow("only", 100, 10, time.Now())}
+	rows := []Row{makeRow("only", 100, 10, time.Now())}
 	SortRows(rows, "mem")
 	if rows[0].Name != "only" {
 		t.Errorf("single row sort: got %q", rows[0].Name)
@@ -125,10 +125,10 @@ func TestSortRows_SingleRow(t *testing.T) {
 
 // ---- FilterByGlob tests ----------------------------------------------------
 
-func makeNamedRows(names ...string) []SessionRow {
-	rows := make([]SessionRow, len(names))
+func makeNamedRows(names ...string) []Row {
+	rows := make([]Row, len(names))
 	for i, n := range names {
-		rows[i] = SessionRow{Name: n}
+		rows[i] = Row{Name: n}
 	}
 	return rows
 }
@@ -193,7 +193,7 @@ func TestFilterByGlob_InvalidPattern(t *testing.T) {
 }
 
 func TestFilterByGlob_Empty(t *testing.T) {
-	var rows []SessionRow
+	var rows []Row
 	got := FilterByGlob(rows, "muxc-*")
 	if len(got) != 0 {
 		t.Errorf("empty rows: expected 0, got %d", len(got))
@@ -211,13 +211,13 @@ func TestFilterByGlob_AllMatch(t *testing.T) {
 // ---- filterByMode tests ----------------------------------------------------
 
 // In each row, IsExternal and ClaudePID are the two fields the filter inspects.
-func modeRow(name string, external bool, claudePID int) SessionRow {
-	return SessionRow{Name: name, IsExternal: external, ClaudePID: claudePID}
+func modeRow(name string, external bool, claudePID int) Row {
+	return Row{Name: name, IsExternal: external, ClaudePID: claudePID}
 }
 
 func TestFilterByMode_None(t *testing.T) {
 	// ExternalNone: drop every external row regardless of Claude presence.
-	rows := []SessionRow{
+	rows := []Row{
 		modeRow("muxc-a", false, 1234), // muxc + claude → keep
 		modeRow("muxc-b", false, 0),    // muxc, no claude → keep
 		modeRow("ext-c", true, 5678),   // external + claude → drop
@@ -236,7 +236,7 @@ func TestFilterByMode_None(t *testing.T) {
 
 func TestFilterByMode_WithClaude(t *testing.T) {
 	// ExternalWithClaude: muxc rows kept; external rows kept only when ClaudePID > 0.
-	rows := []SessionRow{
+	rows := []Row{
 		modeRow("muxc-a", false, 1234), // keep
 		modeRow("muxc-b", false, 0),    // keep
 		modeRow("ext-c", true, 5678),   // keep
@@ -260,7 +260,7 @@ func TestFilterByMode_WithClaude(t *testing.T) {
 
 func TestFilterByMode_All(t *testing.T) {
 	// ExternalAll: no filtering.
-	rows := []SessionRow{
+	rows := []Row{
 		modeRow("muxc-a", false, 0),
 		modeRow("ext-b", true, 0),
 		modeRow("ext-c", true, 1234),
